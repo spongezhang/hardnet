@@ -4,11 +4,12 @@ import torch.nn as nn
 import cv2
 import numpy as np
 
+image_size = 32
 # resize image to size 32x32
-cv2_scale = lambda x: cv2.resize(x, dsize=(32, 32),
+cv2_scale = lambda x: cv2.resize(x, dsize=(image_size, image_size),
                                  interpolation=cv2.INTER_LINEAR)
 # reshape image
-np_reshape = lambda x: np.reshape(x, (32, 32, 1))
+np_reshape = lambda x: np.reshape(x, (image_size, image_size, 3))
 
 class L2Norm(nn.Module):
     def __init__(self):

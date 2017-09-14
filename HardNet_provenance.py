@@ -21,7 +21,6 @@ import torch
 import torch.nn.init
 import torch.nn as nn
 import torch.optim as optim
-import torchvision.datasets as dset
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
@@ -31,12 +30,20 @@ import numpy as np
 import random
 import cv2
 import copy
+import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_margin_min
 from Loggers import Logger, FileLogger
 from W1BS import w1bs_extract_descs_and_save
 from Utils import L2Norm, cv2_scale, np_reshape
 from Utils import str2bool
+
+import matplotlib as mpl
+if os.environ.get('DISPLAY','') == '':
+    print('no display found. Using non-interactive Agg backend')
+    mpl.use('Agg')
+import matplotlib.pyplot as plt
+import plotly.plotly as py
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch HardNet')
@@ -54,7 +61,9 @@ parser.add_argument('--log-dir', default='./logs',
                     help='folder to output model checkpoints')
 parser.add_argument('--experiment-name', default= '/liberty_train/',
                     help='experiment path')
-parser.add_argument('--training-set', default= 'liberty',
+parser.add_argument('--training-set', default= 'synthesized_journals_train',
+                    help='Other options: notredame, yosemite')
+parser.add_argument('--test-set', default= 'synthesized_journals_test_direct',
                     help='Other options: notredame, yosemite')
 parser.add_argument('--num-workers', default= 8,
                     help='Number of workers to be created')
@@ -99,7 +108,7 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--gpu-id', default='0', type=str,
+parser.add_argument('--gpu-id', default='2', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
@@ -108,7 +117,7 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
 
 args = parser.parse_args()
 
-dataset_names = ['liberty', 'notredame', 'yosemite']
+dataset_names = ['liberty']
 
 # check if path to w1bs dataset testing module exists
 if os.path.isdir(args.w1bsroot):
@@ -134,7 +143,7 @@ if not os.path.exists(args.log_dir):
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-class TripletPhotoTour(dset.PhotoTour):
+class TripletPhotoTour(synthesized_journal.synthesized_journal):
     """From the PhotoTour Dataset it generates triplet samples
     note: a triplet is composed by a pair of matching images and one of
     different class.
@@ -146,7 +155,11 @@ class TripletPhotoTour(dset.PhotoTour):
         self.train = train
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
-
+        
+        if not self.train:
+            print(self.data[0].numpy().shape)
+            print(self.data[0].numpy()[:5,30,:])
+        
         if self.train:
             print('Generating {} triplets'.format(self.n_triplets))
             self.triplets = self.generate_triplets(self.labels, self.n_triplets)
@@ -181,8 +194,8 @@ class TripletPhotoTour(dset.PhotoTour):
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
             else:
-                n1 = np.random.randint(0, len(indices[c1]) - 1)
-                n2 = np.random.randint(0, len(indices[c1]) - 1)
+                n1 = 0#np.random.randint(0, len(indices[c1]) - 1)
+                n2 = np.random.randint(1, len(indices[c1]) - 1)
                 while n1 == n2:
                     n2 = np.random.randint(0, len(indices[c1]) - 1)
             n3 = np.random.randint(0, len(indices[c2]) - 1)
@@ -197,12 +210,22 @@ class TripletPhotoTour(dset.PhotoTour):
 
         if not self.train:
             m = self.matches[index]
+            if m[1]==0:
+                print(self.data[m[0]].numpy().shape)
+                print(self.data[m[0]].numpy()[:5,30,:])
             img1 = transform_img(self.data[m[0]])
             img2 = transform_img(self.data[m[1]])
+            if m[1]==0:
+                print(img1.numpy().shape)
+                print(img1.numpy()[:,:5,30])
             return img1, img2, m[2]
-
+        
         t = self.triplets[index]
+        #print(t)
         a, p, n = self.data[t[0]], self.data[t[1]], self.data[t[2]]
+        #print(type(a))
+        #print(a.size())
+        #exit()
 
         img_a = transform_img(a)
         img_p = transform_img(p)
@@ -234,41 +257,41 @@ class TNet(nn.Module):
         super(TNet, self).__init__()
         
         self.features = nn.Sequential(
-            #nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            #nn.BatchNorm2d(32, affine=False),
-            #nn.ReLU(),
-            #nn.Conv2d(32, 32, kernel_size=3, padding=1),
-            #nn.BatchNorm2d(32, affine=False),
-            #nn.ReLU(),
-            #nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            #nn.BatchNorm2d(64, affine=False),
-            #nn.ReLU(),
-            #nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            #nn.BatchNorm2d(64, affine=False),
-            #nn.ReLU(),
-            #nn.Conv2d(64, 128, kernel_size=3, stride=2,padding=1),
-            #nn.BatchNorm2d(128, affine=False),
-            #nn.ReLU(),
-            #nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            #nn.BatchNorm2d(128, affine=False),
-            #nn.ReLU(),
-            ##nn.Dropout(0.1),
-            #nn.Conv2d(128, 128, kernel_size=8),
-            #nn.BatchNorm2d(128, affine=False),
-            nn.Conv2d(1, 32, kernel_size=7),
-            #nn.BatchNorm2d(32, affine=False),
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32, affine=False),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(32, 64, kernel_size=6),
-            #nn.BatchNorm2d(64, affine=False),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32, affine=False),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(64, 128, kernel_size=5),
-            #nn.BatchNorm2d(128, affine=False),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64, affine=False),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(128, 128, kernel_size=4),
-            #nn.BatchNorm2d(128, affine=False),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64, affine=False),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2,padding=1),
+            nn.BatchNorm2d(128, affine=False),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128, affine=False),
+            nn.ReLU(),
+            #nn.Dropout(0.1),
+            nn.Conv2d(128, 128, kernel_size=8),
+            nn.BatchNorm2d(128, affine=False),
+            #nn.Conv2d(1, 32, kernel_size=7),
+            ##nn.BatchNorm2d(32, affine=False),
+            #nn.ReLU(),
+            #nn.MaxPool2d(kernel_size=2),
+            #nn.Conv2d(32, 64, kernel_size=6),
+            ##nn.BatchNorm2d(64, affine=False),
+            #nn.ReLU(),
+            #nn.MaxPool2d(kernel_size=2),
+            #nn.Conv2d(64, 128, kernel_size=5),
+            ##nn.BatchNorm2d(128, affine=False),
+            #nn.ReLU(),
+            #nn.MaxPool2d(kernel_size=2),
+            #nn.Conv2d(128, 128, kernel_size=4),
+            ##nn.BatchNorm2d(128, affine=False),
         )
         self.features.apply(weights_init)
 
@@ -291,16 +314,16 @@ def weights_init(m):
         nn.init.constant(m.bias.data, 0.)
 
 def create_loaders():
-    test_dataset_names = copy.copy(dataset_names)
-    test_dataset_names.remove(args.training_set)
-
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
-    transform = transforms.Compose([
-            transforms.Lambda(cv2_scale),
-            transforms.Lambda(np_reshape),
-            transforms.ToTensor(),
-            transforms.Normalize((args.mean_image,), (args.std_image,))])
+    #transform = transforms.Compose([
+    #        transforms.Lambda(cv2_scale),
+    #        transforms.Lambda(np_reshape),
+    #        transforms.ToTensor(),
+    #        transforms.Normalize((args.mean_image,), (args.std_image,))])
+
+    transform = transforms.Lambda(cv2_scale)
+
 
     train_loader = torch.utils.data.DataLoader(
             TripletPhotoTour(train=True,
@@ -312,26 +335,24 @@ def create_loaders():
                              batch_size=args.batch_size,
                              shuffle=False, **kwargs)
 
-    test_loaders = [{'name': name,
-                     'dataloader': torch.utils.data.DataLoader(
-             TripletPhotoTour(train=False,
+    test_loader =  torch.utils.data.DataLoader(
+                    TripletPhotoTour(train=False,
                      batch_size=args.test_batch_size,
                      root=args.dataroot,
-                     name=name,
+                     name=args.test_set,
                      download=True,
                      transform=transform),
-                        batch_size=args.test_batch_size,
-                        shuffle=False, **kwargs)}
-                    for name in test_dataset_names]
+                     batch_size=args.test_batch_size,
+                     shuffle=False, **kwargs)
 
-    return train_loader, test_loaders
+    return train_loader, test_loader
 
 def train(train_loader, model, optimizer, epoch, logger):
     # switch to train mode
     model.train()
     pbar = tqdm(enumerate(train_loader))
     for batch_idx, (data_a, data_p) in pbar:
-
+        #print(data_a.shape())
         if args.cuda:
             data_a, data_p = data_a.cuda(), data_p.cuda()
 
@@ -366,7 +387,10 @@ def test(test_loader, model, epoch, logger, logger_test_name):
 
     pbar = tqdm(enumerate(test_loader))
     for batch_idx, (data_a, data_p, label) in pbar:
-
+        #if batch_idx == 0:
+            #print(data_a.numpy().shape)
+            #print(data_a[0,:,:10,30])
+            
         if args.cuda:
             data_a, data_p = data_a.cuda(), data_p.cuda()
 
@@ -374,6 +398,10 @@ def test(test_loader, model, epoch, logger, logger_test_name):
                                 Variable(data_p, volatile=True), Variable(label)
 
         out_a, out_p = model(data_a), model(data_p)
+
+        #if batch_idx == 0:
+        #    print(out_a[0,:10])
+            
         dists = torch.sqrt(torch.sum((out_a - out_p) ** 2, 1))  # euclidean distance
         distances.append(dists.data.cpu().numpy())
         ll = label.data.cpu().numpy().reshape(-1, 1)
@@ -383,13 +411,43 @@ def test(test_loader, model, epoch, logger, logger_test_name):
             pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
                 epoch, batch_idx * len(data_a), len(test_loader.dataset),
                        100. * batch_idx / len(test_loader)))
-
+    
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
+    print(distances[:10])
 
     fpr95 = ErrorRateAt95Recall(labels, distances)
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
+    
+    if True:
+        try: 
+            os.stat('./histogram_map/')
+        except:
+            os.mkdir('./histogram_map/')
+
+        bins = np.linspace(0, 2, 100)
+        cos_dists = distances;
+        pos_dists = cos_dists[labels==1]
+        neg_dists = cos_dists[labels==0]
+        plt.hist(pos_dists, bins, alpha = 0.5, label = 'Matched Pairs')
+        plt.hist(neg_dists, bins, alpha = 0.5, label = 'Non-Matched Pairs')
+        plt.legend(loc='upper left')
+        plt.xlim(0, 2)
+        plt.ylim(0, 7e4)
+        plt.xlabel('l2')
+        plt.ylabel('#Pairs')
+        plt.savefig('./histogram_map/iter_{}.png'.format(epoch), bbox_inches='tight')
+        plt.clf()
+
+    good_match_ratio = np.sum((distances<0.3)*labels)/np.sum(labels==1)
+    print('Good match ratio for test: {}'.format(good_match_ratio))
+
+    good_mismatch_ratio = np.sum((distances>0.8)*(1-labels))/np.sum(labels==0)
+    print('Good mismatch ratio for test: {}'.format(good_mismatch_ratio))
+
+    bad_mismatch_ratio = np.sum((distances<0.4)*(1-labels))/np.sum(labels==0)
+    print('Bad mismatch ratio for test: {}'.format(bad_mismatch_ratio))
 
     if (args.enable_logging):
         logger.log_value(logger_test_name+' fpr95', fpr95)
@@ -422,7 +480,7 @@ def create_optimizer(model, new_lr):
     return optimizer
 
 
-def main(train_loader, test_loaders, model, logger, file_logger):
+def main(train_loader, test_loader, model, logger, file_logger):
     # print the experiment configuration
     print('\nparsed options:\n{}\n'.format(vars(args)))
 
@@ -449,11 +507,11 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     end = start + args.epochs
     for epoch in range(start, end):
 
-        train(train_loader, model, optimizer1, epoch, logger)
+        #train(train_loader, model, optimizer1, epoch, logger)
 
         # iterate over test loaders and test results
-        for test_loader in test_loaders:
-            test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        #for test_loader in test_loaders:
+        test(test_loader, model, epoch, logger, args.test_set)
 
         #if TEST_ON_W1BS :
         #    # print(weights_path)
@@ -494,6 +552,8 @@ if __name__ == '__main__':
     if(args.enable_logging):
         logger = Logger(LOG_DIR)
         file_logger = FileLogger(LOG_DIR)
-        train_loader, test_loaders = create_loaders()
-
-    main(train_loader, test_loaders, model, logger, file_logger)
+        train_loader, test_loader = create_loaders()
+        
+    print(test_loader.data[0].numpy().shape)
+    print(test_loader.data[0].numpy()[:5,30,:])
+    main(train_loader, test_loader, model, logger, file_logger)
