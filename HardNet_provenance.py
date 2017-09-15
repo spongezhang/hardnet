@@ -38,6 +38,8 @@ from W1BS import w1bs_extract_descs_and_save
 from Utils import L2Norm, cv2_scale, np_reshape
 from Utils import str2bool
 
+from scipy.spatial import distance
+
 import matplotlib as mpl
 if os.environ.get('DISPLAY','') == '':
     print('no display found. Using non-interactive Agg backend')
@@ -202,6 +204,30 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             triplets.append([indices[c1][n1], indices[c1][n2], indices[c2][n3]])
         return torch.LongTensor(np.array(triplets))
 
+    def remove_easy_triplets(self, embeddings):
+
+        old_triplets = self.triplets.numpy()
+        new_triplets = []
+        old_triplets_len = old_triplets.shape[0]
+        good_num = 0
+
+        for index in tqdm(xrange(old_triplets_len)):
+            pos_distance = distance.euclidean(embeddings[old_triplets[index][0]], embeddings[old_triplets[index][1]])
+
+            if pos_distance<0.4:
+                prob = random.randint(0,9)
+                good_num = good_num+1
+                if prob<5:
+                    continue
+                
+            new_triplets.append(old_triplets[index])
+
+        print('good number: {}'.format(good_num))
+        print('old number: {}'.format(old_triplets_len))
+        print('new number: {}'.format(len(new_triplets)))
+        self.n_triplets = len(new_triplets)
+        self.triplets = torch.LongTensor(np.array(new_triplets))
+
     def __getitem__(self, index):
         def transform_img(img):
             if self.transform is not None:
@@ -249,6 +275,33 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             return self.triplets.size(0)
         else:
             return self.matches.size(0)
+
+class simpleDataLoader(synthesized_journal.synthesized_journal):
+    """From the PhotoTour Dataset it generates triplet samples
+    note: a triplet is composed by a pair of matching images and one of
+    different class.
+    """
+    def __init__(self, train=True, transform=None, batch_size = None, *arg, **kw):
+        super(simpleDataLoader, self).__init__(*arg, **kw)
+        self.transform = transform
+
+        self.train = train
+        self.n_triplets = args.n_triplets
+        self.batch_size = batch_size
+        self.num_sample = self.data.numpy().shape[0]
+        
+    def __getitem__(self, index):
+        def transform_img(img):
+            if self.transform is not None:
+                img = self.transform(img.numpy())
+            return img
+
+        #if not self.train:
+        img = transform_img(self.data[index])
+        return img
+
+    def __len__(self):
+        return self.num_sample
 
 class TNet(nn.Module):
     """TFeat model definition
@@ -335,6 +388,16 @@ def create_loaders():
                              batch_size=args.batch_size,
                              shuffle=False, **kwargs)
 
+    train_sample_loader = torch.utils.data.DataLoader(
+            simpleDataLoader(train=True,
+                             batch_size=args.batch_size,
+                             root=args.dataroot,
+                             name=args.training_set,
+                             download=True,
+                             transform=transform),
+                             batch_size=args.test_batch_size,
+                             shuffle=False, **kwargs)
+
     test_loader =  torch.utils.data.DataLoader(
                     TripletPhotoTour(train=False,
                      batch_size=args.test_batch_size,
@@ -345,11 +408,13 @@ def create_loaders():
                      batch_size=args.test_batch_size,
                      shuffle=False, **kwargs)
 
-    return train_loader, test_loader
+    return train_loader, train_sample_loader, test_loader
 
 def train(train_loader, model, optimizer, epoch, logger):
     # switch to train mode
     model.train()
+    print('Number of Batches in training: {}'.format(len(train_loader)))
+    print(len(train_loader.dataset))
     pbar = tqdm(enumerate(train_loader))
     for batch_idx, (data_a, data_p) in pbar:
         #print(data_a.shape())
@@ -379,6 +444,26 @@ def train(train_loader, model, optimizer, epoch, logger):
     torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}/checkpoint_{}.pth'.format(LOG_DIR, epoch))
 
+def remove_easy(train_loader, train_sample_loader, model, epoch, logger):
+    # switch to evaluate mode
+    model.eval()
+
+    embedding = []
+    sample_number = train_sample_loader.dataset.num_sample
+    pbar = tqdm(enumerate(train_sample_loader))
+    descriptor_dim = 128
+    for batch_idx, data_a in pbar:
+        if args.cuda:
+            data_a = data_a.cuda()
+
+        data_a = Variable(data_a, volatile=True)
+        out_a = model(data_a)
+        embedding.append(out_a.data.cpu().numpy())
+
+    embedding = np.vstack(embedding).reshape(sample_number,descriptor_dim)
+    train_loader.dataset.remove_easy_triplets(embedding)
+    return
+
 def test(test_loader, model, epoch, logger, logger_test_name):
     # switch to evaluate mode
     model.eval()
@@ -407,10 +492,10 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         ll = label.data.cpu().numpy().reshape(-1, 1)
         labels.append(ll)
 
-        if batch_idx % args.log_interval == 0:
-            pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
-                epoch, batch_idx * len(data_a), len(test_loader.dataset),
-                       100. * batch_idx / len(test_loader)))
+        #if batch_idx % args.log_interval == 0:
+        #    pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
+        #        epoch, batch_idx * len(data_a), len(test_loader.dataset),
+        #               100. * batch_idx / len(test_loader)))
     
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
@@ -480,7 +565,7 @@ def create_optimizer(model, new_lr):
     return optimizer
 
 
-def main(train_loader, test_loader, model, logger, file_logger):
+def main(train_loader, train_sample_loader, test_loader, model, logger, file_logger):
     # print the experiment configuration
     print('\nparsed options:\n{}\n'.format(vars(args)))
 
@@ -508,40 +593,10 @@ def main(train_loader, test_loader, model, logger, file_logger):
     for epoch in range(start, end):
 
         train(train_loader, model, optimizer1, epoch, logger)
+        
+        #remove_easy(train_loader, train_sample_loader, model, epoch, logger)
 
-        # iterate over test loaders and test results
-        #for test_loader in test_loaders:
         test(test_loader, model, epoch, logger, args.test_set)
-
-        #if TEST_ON_W1BS :
-        #    # print(weights_path)
-        #    patch_images = w1bs.get_list_of_patch_images(
-        #        DATASET_DIR=args.w1bsroot.replace('/code', '/data/W1BS'))
-        #    desc_name = 'curr_desc'
-
-        #    for img_fname in patch_images:
-        #        w1bs_extract_descs_and_save(img_fname, model, desc_name, cuda = args.cuda,
-        #                                    mean_img=args.mean_image,
-        #                                    std_img=args.std_image)
-
-        #    DESCS_DIR = args.w1bsroot.replace('/code', "/data/out_descriptors")
-        #    OUT_DIR = args.w1bsroot.replace('/code', "/data/out_graphs")
-
-        #    force_rewrite_list = [desc_name]
-        #    w1bs.match_descriptors_and_save_results(DESC_DIR=DESCS_DIR, do_rewrite=True,
-        #                                            dist_dict={},
-        #                                            force_rewrite_list=force_rewrite_list)
-        #    if(args.enable_logging):
-        #        w1bs.draw_and_save_plots_with_loggers(DESC_DIR=DESCS_DIR, OUT_DIR=OUT_DIR,
-        #                                 methods=["SNN_ratio"],
-        #                                 descs_to_draw=[desc_name],
-        #                                 logger=file_logger,
-        #                                 tensor_logger = logger)
-        #    else:
-        #        w1bs.draw_and_save_plots_with_loggers(DESC_DIR=DESCS_DIR, OUT_DIR=OUT_DIR,
-        #                                 methods=["SNN_ratio"],
-        #                                 descs_to_draw=[desc_name],
-        #                                 really_draw = False)
 
 if __name__ == '__main__':
 
@@ -552,6 +607,6 @@ if __name__ == '__main__':
     if(args.enable_logging):
         logger = Logger(LOG_DIR)
         file_logger = FileLogger(LOG_DIR)
-        train_loader, test_loader = create_loaders()
+        train_loader, train_sample_loader, test_loader = create_loaders()
         
-    main(train_loader, test_loader, model, logger, file_logger)
+    main(train_loader, train_sample_loader, test_loader, model, logger, file_logger)

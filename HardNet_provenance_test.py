@@ -233,7 +233,10 @@ def main(model):
         transforms.Lambda(cv2_scale),
         transforms.Lambda(np_reshape),
         transforms.ToTensor(),
-        transforms.Normalize((args.mean_image,), (args.std_image,))])
+        #transforms.Normalize((args.mean_image,), (args.std_image,))
+        transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                (args.std_image,args.std_image,args.std_image))
+        ])
 
     test_batch_size = args.test_batch_size
     descriptor_dim = 128
