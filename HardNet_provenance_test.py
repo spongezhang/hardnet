@@ -20,6 +20,7 @@ import argparse
 import torch
 import torch.nn.init
 import torch.nn as nn
+import torch.utils.data as data
 import torch.optim as optim
 import torchvision.transforms as transforms
 from torch.autograd import Variable
@@ -117,38 +118,40 @@ if args.cuda:
     cudnn.benchmark = True
     torch.cuda.manual_seed_all(args.seed)
 
-class testDataset():
+class testDataset(data.Dataset):
     """From the PhotoTour Dataset it generates triplet samples
     note: a triplet is composed by a pair of matching images and one of
     different class.
     """
     def __init__(self, data, train=True, transform=None, batch_size = None, *arg, **kw):
-        super(TripletPhotoTour, self).__init__(*arg, **kw)
         self.transform = transform
-
         self.train = train
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
         self.data = data
 
         self.data_size = self.data.numpy().shape[0]
-
-        if not self.train:
-            print(self.data[0].numpy().shape)
-            print(self.data[0].numpy()[:5,30,:])
+        #print(self.data_size)
+        #if not self.train:
+            #print(self.data[199].numpy().shape)
+            #print(self.data[199].numpy()[:5,30,:])
         
-    @staticmethod
-    def __getitem__(self, index):
+    def __getitem__(self,index):
         def transform_img(img):
             if self.transform is not None:
                 img = self.transform(img.numpy())
             return img
-            img1 = transform_img(self.data[index])
-            if index==0:
-                print(img1.numpy().shape)
-                print(img1.numpy()[:,:5,30])
+        #if index==0:
+            #print(self.data[199].numpy().shape)
+            #print(self.data[199].numpy()[:5,30,:])
 
-            return img1
+        img1 = transform_img(self.data[index])
+
+        #if index==199:
+            #print(img1.numpy().shape)
+            #print(img1.numpy()[:,:5,15])
+
+        return img1
 
     def __len__(self):
         return self.data_size
@@ -221,6 +224,7 @@ def main(model):
     world_file_list = world_list["WorldFileName"]
     world_id_list = world_list["WorldFileID"]
     subset = 'world'
+    kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
     
     if args.cuda:
         model.cuda()
@@ -249,6 +253,10 @@ def main(model):
         meta = np.array([])
         features = np.array([])
         feature_file = root_dir+'/'+detector_name+'_prov_desc_'+subset+'/'+fileid+'.npz'
+        
+        #if fileid != 'COCO_train2014_000000258035':
+            #continue
+            
         try:
             gray_image, ratio = image_processing.read_image_from_name(root_dir,filename)
             color_image, ratio = image_processing.read_color_image_from_name(root_dir,filename)
@@ -261,57 +269,63 @@ def main(model):
         
         for kp_idx, kp in enumerate(kp_list):
             tmp_patch = image_processing.extract_patch(color_image, kp)
-            tmp_patch = transform(tmp_patch)
-            if fileid == 'COCO_train2014_000000258035' and kp_idx == 199:
-                print(tmp_patch.numpy().shape)
-                print(tmp_patch.numpy()[:,:10,30])
-            patches_list.append(tmp_patch.numpy())
-        print(tmp_patch.numpy().shape)
-        
-        if fileid == 'COCO_train2014_000000258035':
-            print(patches_list[199][:,:10,30])
+            #tmp_patch = transform(tmp_patch)
+            #if fileid == 'COCO_train2014_000000258035' and kp_idx == 199:
+            #    print(tmp_patch.numpy().shape)
+            #    print(tmp_patch.numpy()[:,:10,30])
+            patches_list.append(tmp_patch)
+        #print(tmp_patch.numpy().shape)
+
+        #if fileid == 'COCO_train2014_000000258035':
+            #print(patches_list[199][:5,30,:])
 
         patches_list = np.array(patches_list)
         #print(patches_list.dtype)
-        patches_list = torch.FloatTensor(patches_list)
+        patches_list = torch.ByteTensor(patches_list)
         #patches_list = transform(patches_list)
-         
+        
+        test_loader = torch.utils.data.DataLoader(
+            testDataset(train=False,
+                        data = patches_list,
+                        batch_size=args.test_batch_size,
+                        root=args.dataroot,
+                        name=args.test_set,
+                        download=False,
+                        transform=transform),
+                        batch_size=args.batch_size,
+                        shuffle=False, **kwargs)
+
         patch_number = len(kp_list)
+        #print(patch_number)
         if patch_number == 0:
             np.savez(feature_file, meta=meta, features = features)
             continue
          
         offset = 0
         meta = np.zeros((patch_number,4))
-        features = np.zeros((patch_number,descriptor_dim))
-
-        for x in xrange(patch_number // test_batch_size+1):
-            # get data batch
-            real_length = min(test_batch_size, patch_number-offset)
-
-            if real_length == 0:
-                break
-
-            #img = transform(img.numpy()) 
-            patch_data = patches_list[x*test_batch_size:x*test_batch_size+real_length]
-            
+        features = []
+        #pbar = tqdm(enumerate())
+        for data_a in test_loader:
+        ##if batch_idx == 0:
+        #    #print(data_a.numpy().shape)
+        #    #print(data_a[0,:,:10,30])
             if args.cuda:
-                patch_data = patch_data.cuda()
+                data_a = data_a.cuda()
 
-            patch_data = Variable(patch_data, volatile=True)
-            out_a = model(patch_data)
-            features[offset:offset + real_length,:] = out_a.data.cpu().numpy()
-            offset = offset+real_length
-            
+            data_a = Variable(data_a, volatile=True)
+            out_a = model(data_a)
+            features.append(out_a.data.cpu().numpy())
+
+        features = np.vstack(features).reshape(patch_number,descriptor_dim)
         try:
             os.stat(feature_file)
             os.remove(feature_file)
         except:
             feature_file = feature_file
 
-        if fileid == 'COCO_train2014_000000258035':
-            print(features[199,:10])
-            break
+        #if fileid == 'COCO_train2014_000000258035':
+            #print(features[199,:10])
+            #break
             
         np.savez(feature_file, meta=meta, features = features)
 

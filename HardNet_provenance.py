@@ -156,9 +156,9 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
         
-        if not self.train:
-            print(self.data[0].numpy().shape)
-            print(self.data[0].numpy()[:5,30,:])
+        #if not self.train:
+        #    print(self.data[0].numpy().shape)
+        #    print(self.data[0].numpy()[:5,30,:])
         
         if self.train:
             print('Generating {} triplets'.format(self.n_triplets))
@@ -210,14 +210,14 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
 
         if not self.train:
             m = self.matches[index]
-            if m[1]==0:
-                print(self.data[m[0]].numpy().shape)
-                print(self.data[m[0]].numpy()[:5,30,:])
+            #if m[1]==0:
+            #    print(self.data[m[1]].numpy().shape)
+            #    print(self.data[m[1]].numpy()[:5,30,:])
             img1 = transform_img(self.data[m[0]])
             img2 = transform_img(self.data[m[1]])
-            if m[1]==0:
-                print(img1.numpy().shape)
-                print(img1.numpy()[:,:5,30])
+            #if m[1]==0:
+            #    print(img1.numpy().shape)
+            #    print(img1.numpy()[:,:5,15])
             return img1, img2, m[2]
         
         t = self.triplets[index]
@@ -316,14 +316,14 @@ def weights_init(m):
 def create_loaders():
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
-    #transform = transforms.Compose([
-    #        transforms.Lambda(cv2_scale),
-    #        transforms.Lambda(np_reshape),
-    #        transforms.ToTensor(),
-    #        transforms.Normalize((args.mean_image,), (args.std_image,))])
-
-    transform = transforms.Lambda(cv2_scale)
-
+    transform = transforms.Compose([
+            transforms.Lambda(cv2_scale),
+            transforms.Lambda(np_reshape),
+            transforms.ToTensor(),
+            #transforms.Normalize((args.mean_image,),(args.std_image,))
+            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                (args.std_image,args.std_image,args.std_image))
+            ])
 
     train_loader = torch.utils.data.DataLoader(
             TripletPhotoTour(train=True,
@@ -400,7 +400,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         out_a, out_p = model(data_a), model(data_p)
 
         #if batch_idx == 0:
-        #    print(out_a[0,:10])
+            #print(out_p[0,:10])
             
         dists = torch.sqrt(torch.sum((out_a - out_p) ** 2, 1))  # euclidean distance
         distances.append(dists.data.cpu().numpy())
@@ -415,7 +415,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
-    print(distances[:10])
+    #print(distances[:200])
 
     fpr95 = ErrorRateAt95Recall(labels, distances)
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
@@ -507,7 +507,7 @@ def main(train_loader, test_loader, model, logger, file_logger):
     end = start + args.epochs
     for epoch in range(start, end):
 
-        #train(train_loader, model, optimizer1, epoch, logger)
+        train(train_loader, model, optimizer1, epoch, logger)
 
         # iterate over test loaders and test results
         #for test_loader in test_loaders:
@@ -554,6 +554,4 @@ if __name__ == '__main__':
         file_logger = FileLogger(LOG_DIR)
         train_loader, test_loader = create_loaders()
         
-    print(test_loader.data[0].numpy().shape)
-    print(test_loader.data[0].numpy()[:5,30,:])
     main(train_loader, test_loader, model, logger, file_logger)

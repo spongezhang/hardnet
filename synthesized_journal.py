@@ -42,7 +42,7 @@ class synthesized_journal(data.Dataset):
 
         # load the serialized data
         self.data, self.labels, self.matches = torch.load(self.data_file)
-        print(type(self.data))
+        #print(type(self.data))
         #print(self.data.shape)
 
     def __getitem__(self, index):
@@ -97,7 +97,7 @@ def read_image_file(data_dir, dataset_name):
     """Return a Tensor containing the patches
     """
     patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
-    print(patches.shape)
+    #print(patches.shape)
     return torch.ByteTensor(np.array(patches))
 
 
