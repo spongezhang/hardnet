@@ -135,7 +135,7 @@ def loss_margin_min_gor(anchor, positive, negative, alpha = 1.0, anchor_swap = F
     neg_dis = torch.pow(torch.sum(torch.mul(anchor,negative),1),2)
     gor = torch.mean(neg_dis)
     
-    loss = torch.mean(dist_hinge) + alpha*gor
+    loss = torch.mean(dist_hinge) + alpha*gor + 1.0*torch.mean(torch.pow(pos,2))
     
     return loss, gor
 

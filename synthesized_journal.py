@@ -2,7 +2,7 @@ import os
 import errno
 import numpy as np
 from PIL import Image
-
+import hickle as hkl
 import torch
 import torch.utils.data as data
 
@@ -96,7 +96,8 @@ class synthesized_journal(data.Dataset):
 def read_image_file(data_dir, dataset_name):
     """Return a Tensor containing the patches
     """
-    patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
+    #patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
+    patches = hkl.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
     #print(patches.shape)
     return torch.ByteTensor(np.array(patches))
 

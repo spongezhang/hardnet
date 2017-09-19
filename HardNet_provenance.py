@@ -32,10 +32,10 @@ import cv2
 import copy
 import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
-from Losses import loss_margin_min
+from Losses import loss_margin_min, loss_margin_min_gor
 from Loggers import Logger, FileLogger
 from W1BS import w1bs_extract_descs_and_save
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
 
 from scipy.spatial import distance
@@ -217,14 +217,15 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             if pos_distance<0.4:
                 prob = random.randint(0,9)
                 good_num = good_num+1
-                if prob<5:
-                    continue
+                #if prob<5:
+                    #continue
                 
             new_triplets.append(old_triplets[index])
 
         print('good number: {}'.format(good_num))
-        print('old number: {}'.format(old_triplets_len))
-        print('new number: {}'.format(len(new_triplets)))
+        print('good ratio: {}'.format(good_num/float(old_triplets_len)))
+        #print('old number: {}'.format(old_triplets_len))
+        #print('new number: {}'.format(len(new_triplets)))
         self.n_triplets = len(new_triplets)
         self.triplets = torch.LongTensor(np.array(new_triplets))
 
@@ -328,7 +329,7 @@ class TNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            #nn.Dropout(0.1),
+            nn.Dropout(0.1),
             nn.Conv2d(128, 128, kernel_size=8),
             nn.BatchNorm2d(128, affine=False),
             #nn.Conv2d(1, 32, kernel_size=7),
@@ -370,7 +371,9 @@ def create_loaders():
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
     transform = transforms.Compose([
-            transforms.Lambda(cv2_scale),
+            #transforms.Lambda(cv2_scale),
+            transforms.Lambda(centerCrop),
+            #transforms.CenterCrop((32,32)),
             transforms.Lambda(np_reshape),
             transforms.ToTensor(),
             #transforms.Normalize((args.mean_image,),(args.std_image,))
@@ -378,15 +381,22 @@ def create_loaders():
                 (args.std_image,args.std_image,args.std_image))
             ])
 
-    train_loader = torch.utils.data.DataLoader(
-            TripletPhotoTour(train=True,
+    #train_loader = torch.utils.data.DataLoader(
+    #        TripletPhotoTour(train=True,
+    #                         batch_size=args.batch_size,
+    #                         root=args.dataroot,
+    #                         name=args.training_set,
+    #                         download=True,
+    #                         transform=transform),
+    #                         batch_size=args.batch_size,
+    #                         shuffle=False, **kwargs)
+
+    train_dataset = TripletPhotoTour(train=True,
                              batch_size=args.batch_size,
                              root=args.dataroot,
                              name=args.training_set,
                              download=True,
-                             transform=transform),
-                             batch_size=args.batch_size,
-                             shuffle=False, **kwargs)
+                             transform=transform)
 
     train_sample_loader = torch.utils.data.DataLoader(
             simpleDataLoader(train=True,
@@ -408,11 +418,26 @@ def create_loaders():
                      batch_size=args.test_batch_size,
                      shuffle=False, **kwargs)
 
-    return train_loader, train_sample_loader, test_loader
+    return train_dataset, train_sample_loader, test_loader
 
-def train(train_loader, model, optimizer, epoch, logger):
+def train(train_dataset, model, optimizer, epoch, logger):
     # switch to train mode
     model.train()
+    kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
+
+    transform = transforms.Compose([
+            #transforms.Lambda(cv2_scale),
+            transforms.Lambda(centerCrop),
+            transforms.Lambda(np_reshape),
+            transforms.ToTensor(),
+            #transforms.Normalize((args.mean_image,),(args.std_image,))
+            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                (args.std_image,args.std_image,args.std_image))
+            ])
+
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
+                             shuffle=False, **kwargs)
+
     print('Number of Batches in training: {}'.format(len(train_loader)))
     print(len(train_loader.dataset))
     pbar = tqdm(enumerate(train_loader))
@@ -425,7 +450,7 @@ def train(train_loader, model, optimizer, epoch, logger):
         out_a, out_p = model(data_a), model(data_p)
 
         #hardnet loss
-        loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
+        loss = loss_margin_min_gor(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
 
         optimizer.zero_grad()
         loss.backward()
@@ -444,7 +469,7 @@ def train(train_loader, model, optimizer, epoch, logger):
     torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}/checkpoint_{}.pth'.format(LOG_DIR, epoch))
 
-def remove_easy(train_loader, train_sample_loader, model, epoch, logger):
+def remove_easy(train_dataset, train_sample_loader, model, epoch, logger):
     # switch to evaluate mode
     model.eval()
 
@@ -461,7 +486,7 @@ def remove_easy(train_loader, train_sample_loader, model, epoch, logger):
         embedding.append(out_a.data.cpu().numpy())
 
     embedding = np.vstack(embedding).reshape(sample_number,descriptor_dim)
-    train_loader.dataset.remove_easy_triplets(embedding)
+    train_dataset.remove_easy_triplets(embedding)
     return
 
 def test(test_loader, model, epoch, logger, logger_test_name):
@@ -565,7 +590,7 @@ def create_optimizer(model, new_lr):
     return optimizer
 
 
-def main(train_loader, train_sample_loader, test_loader, model, logger, file_logger):
+def main(train_dataset, train_sample_loader, test_loader, model, logger, file_logger):
     # print the experiment configuration
     print('\nparsed options:\n{}\n'.format(vars(args)))
 
@@ -592,9 +617,9 @@ def main(train_loader, train_sample_loader, test_loader, model, logger, file_log
     end = start + args.epochs
     for epoch in range(start, end):
 
-        train(train_loader, model, optimizer1, epoch, logger)
+        train(train_dataset, model, optimizer1, epoch, logger)
         
-        #remove_easy(train_loader, train_sample_loader, model, epoch, logger)
+        remove_easy(train_dataset, train_sample_loader, model, epoch, logger)
 
         test(test_loader, model, epoch, logger, args.test_set)
 
@@ -607,6 +632,6 @@ if __name__ == '__main__':
     if(args.enable_logging):
         logger = Logger(LOG_DIR)
         file_logger = FileLogger(LOG_DIR)
-        train_loader, train_sample_loader, test_loader = create_loaders()
+        train_dataset, train_sample_loader, test_loader = create_loaders()
         
-    main(train_loader, train_sample_loader, test_loader, model, logger, file_logger)
+    main(train_dataset, train_sample_loader, test_loader, model, logger, file_logger)

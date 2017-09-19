@@ -35,7 +35,7 @@ import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_margin_min
 from Loggers import Logger, FileLogger
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
 
 from scipy.spatial import distance
@@ -182,7 +182,7 @@ class TNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            #nn.Dropout(0.1),
+            nn.Dropout(0.1),
             nn.Conv2d(128, 128, kernel_size=8),
             nn.BatchNorm2d(128, affine=False),
             #nn.Conv2d(1, 32, kernel_size=7),
@@ -230,7 +230,8 @@ def main(model):
         model.cuda()
 
     transform = transforms.Compose([
-        transforms.Lambda(cv2_scale),
+        transforms.Lambda(centerCrop),
+        #transforms.Lambda(cv2_scale),
         transforms.Lambda(np_reshape),
         transforms.ToTensor(),
         #transforms.Normalize((args.mean_image,), (args.std_image,))
