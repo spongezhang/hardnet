@@ -63,7 +63,7 @@ parser.add_argument('--log-dir', default='./logs',
                     help='folder to output model checkpoints')
 parser.add_argument('--experiment-name', default= '/liberty_train/',
                     help='experiment path')
-parser.add_argument('--training-set', default= 'synthesized_journals_train',
+parser.add_argument('--training-set', default= 'synthesized_journals_test',
                     help='Other options: notredame, yosemite')
 parser.add_argument('--test-set', default= 'synthesized_journals_test_direct',
                     help='Other options: notredame, yosemite')
@@ -256,6 +256,7 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
 
         img_a = transform_img(a)
         img_p = transform_img(p)
+        img_n = transform_img(n)
 
         # transform images if required
         if args.fliprot:
@@ -265,11 +266,13 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             if do_rot:
                 img_a = img_a.permute(0,2,1)
                 img_p = img_p.permute(0,2,1)
+                img_n = img_n.permute(0,2,1)
 
             if do_flip:
                 img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,:,::-1]))
                 img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
-        return img_a, img_p
+                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
+        return img_a, img_p, img_n
 
     def __len__(self):
         if self.train:
@@ -441,16 +444,17 @@ def train(train_dataset, model, optimizer, epoch, logger):
     print('Number of Batches in training: {}'.format(len(train_loader)))
     print(len(train_loader.dataset))
     pbar = tqdm(enumerate(train_loader))
-    for batch_idx, (data_a, data_p) in pbar:
+    for batch_idx, (data_a, data_p, data_n) in pbar:
         #print(data_a.shape())
         if args.cuda:
-            data_a, data_p = data_a.cuda(), data_p.cuda()
+            data_a, data_p, data_n = data_a.cuda(), data_p.cuda(), data_n.cuda()
 
-        data_a, data_p = Variable(data_a), Variable(data_p)
-        out_a, out_p = model(data_a), model(data_p)
+        data_a, data_p,data_n = Variable(data_a), Variable(data_p), Variable(data_n)
+        out_a, out_p, out_n = model(data_a), model(data_p), model(data_n)
 
         #hardnet loss
-        loss = loss_margin_min_gor(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
+        #loss, gor = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
+        loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
 
         optimizer.zero_grad()
         loss.backward()
