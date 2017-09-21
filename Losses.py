@@ -27,14 +27,16 @@ def pairwise_distance(x1, x2, p=2, eps=1e-6):
 def distance_matrix_vector(anchor, positive):
     """Given batch of anchor descriptors and positive descriptors calculate distance matrix"""
 
-    d1_sq = torch.sum(anchor * anchor, dim=1)
-    d2_sq = torch.sum(positive * positive, dim=1)
+    d1_sq = torch.sum(anchor * anchor, dim=1).unsqueeze(-1)
+    d2_sq = torch.sum(positive * positive, dim=1).unsqueeze(-1)
 
     eps = 1e-6
     return torch.sqrt((d1_sq.repeat(1, anchor.size(0)) + torch.t(d2_sq.repeat(1, positive.size(0)))
                       - 2.0 * torch.bmm(anchor.unsqueeze(0), torch.t(positive).unsqueeze(0)).squeeze(0))+eps)
+    #return torch.sqrt((d1_sq.repeat(1, anchor.size(0)) + torch.t(d2_sq.repeat(1, positive.size(0)))
+    #                  - 2.0 * torch.mm(anchor, torch.t(positive)))+eps)
 
-def loss_margin_min(anchor, positive, anchor_swap = False, anchor_ave = False, margin = 1.0):
+def loss_margin_min(anchor, positive, anchor_swap = False, anchor_ave = False, margin = 1.0, alpha = 1.0):
     """HardNet margin loss - calculates loss based on distance matrix based on positive distance and closest negative distance.
     """
 
@@ -53,18 +55,19 @@ def loss_margin_min(anchor, positive, anchor_swap = False, anchor_ave = False, m
 
     min_neg = torch.min(dist_without_min_on_diag,1)[0]
     if anchor_swap:
-        min_neg2 = torch.t(torch.min(dist_without_min_on_diag,0)[0])
+        min_neg2 = torch.min(dist_without_min_on_diag,0)[0]
         min_neg = torch.min(min_neg,min_neg2)
-    min_neg = torch.t(min_neg).squeeze(0)
+
+    #min_neg = torch.t(min_neg)
     dist_hinge = torch.clamp(margin + pos - min_neg, min=0.0)
 
     if anchor_ave:
-        min_neg2 = torch.t(torch.min(dist_without_min_on_diag,0)[0])
-        min_neg2 = torch.t(min_neg2).squeeze(0)
+        min_neg2 = torch.min(dist_without_min_on_diag,0)[0]
+        #min_neg2 = torch.t(min_neg2).squeeze(0)
         dist_hinge2 = torch.clamp(1.0 + pos - min_neg2, min=0.0)
         dist_hinge = 0.5 * (dist_hinge2 + dist_hinge)
 
-    loss = torch.mean(dist_hinge) + 1.0*torch.mean(torch.pow(pos,2))
+    loss = torch.mean(dist_hinge) + alpha*torch.mean(torch.pow(pos,2))
     return loss
 
 def loss_margin_min_t(anchor, positive, negative, anchor_swap = False, anchor_ave = False, margin = 1.0):
