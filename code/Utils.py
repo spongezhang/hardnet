@@ -10,6 +10,8 @@ cv2_scale = lambda x: cv2.resize(x, dsize=(image_size, image_size),
                                  interpolation=cv2.INTER_LINEAR)
 # reshape image
 np_reshape = lambda x: np.reshape(x, (image_size, image_size, 3))
+ 
+centerCrop = lambda x: x[15:47,15:47,:] 
 
 class L2Norm(nn.Module):
     def __init__(self):

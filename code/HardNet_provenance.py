@@ -32,9 +32,9 @@ import cv2
 import copy
 import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
-from Losses import loss_margin_min
+from Losses import loss_margin_min, loss_margin_min_gor
 from Loggers import Logger
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
 
 from scipy.spatial import distance
@@ -106,7 +106,7 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--gpu-id', default='0', type=str,
+parser.add_argument('--gpu-id', default='3', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
@@ -126,7 +126,7 @@ parser.add_argument("--beta", nargs='?', type=float, default = 0.0,
 args = parser.parse_args()
 
 suffix = 'alpha{:1.1e}_beta{:1.1e}_lossType_{}'\
-        .format( args.alpha, args.beta, args.margin, args.loss_type)
+        .format( args.alpha, args.beta, args.loss_type)
         
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -158,10 +158,6 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         self.train = train
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
-        
-        #if not self.train:
-        #    print(self.data[0].numpy().shape)
-        #    print(self.data[0].numpy()[:5,30,:])
         
         if self.train:
             print('Generating {} triplets'.format(self.n_triplets))
@@ -255,6 +251,7 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         #exit()
         img_a = transform_img(a)
         img_p = transform_img(p)
+        img_n = transform_img(n)
 
         # transform images if required
         if args.fliprot:
@@ -264,11 +261,15 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             if do_rot:
                 img_a = img_a.permute(0,2,1)
                 img_p = img_p.permute(0,2,1)
+                img_n = img_n.permute(0,2,1)
 
             if do_flip:
                 img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,:,::-1]))
                 img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
-        return img_a, img_p
+                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
+
+
+        return img_a, img_p, img_n
 
     def __len__(self):
         if self.train:
@@ -328,7 +329,7 @@ class TNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            #nn.Dropout(0.1),
+            nn.Dropout(0.1),
             nn.Conv2d(128, 128, kernel_size=8),
             nn.BatchNorm2d(128, affine=False),
             #nn.Conv2d(1, 32, kernel_size=7),
@@ -370,7 +371,8 @@ def create_loaders():
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
     transform = transforms.Compose([
-            transforms.Lambda(cv2_scale),
+            #transforms.Lambda(cv2_scale),
+            transforms.Lambda(centerCrop),
             transforms.Lambda(np_reshape),
             transforms.ToTensor(),
             #transforms.Normalize((args.mean_image,),(args.std_image,))
@@ -416,17 +418,19 @@ def train(train_loader, model, optimizer, epoch, logger):
     print('Number of Batches in training: {}'.format(len(train_loader)))
     print(len(train_loader.dataset))
     pbar = tqdm(enumerate(train_loader))
-    for batch_idx, (data_a, data_p) in pbar:
+    for batch_idx, (data_a, data_p, data_n) in pbar:
         #print(data_a.shape())
         if args.cuda:
-            data_a, data_p = data_a.cuda(), data_p.cuda()
+            data_a, data_p, data_n = data_a.cuda(), data_p.cuda(), data_n.cuda()
 
-        data_a, data_p = Variable(data_a), Variable(data_p)
-        out_a, out_p = model(data_a), model(data_p)
+        data_a, data_p, data_n = Variable(data_a), Variable(data_p), Variable(data_n)
+        out_a, out_p, out_n = model(data_a), model(data_p), model(data_n)
 
         #hardnet loss
         if args.loss_type==0:
             loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, anchor_ave=args.anchorave)
+        elif args.loss_type == 1:
+            loss = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, beta = args.beta, anchor_ave=args.anchorave)
 
         optimizer.zero_grad()
         loss.backward()
