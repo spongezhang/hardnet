@@ -35,7 +35,7 @@ import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_margin_min
 from Loggers import Logger, FileLogger
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
 
 from scipy.spatial import distance
@@ -52,7 +52,7 @@ parser.add_argument('--model-dir', default='../provenance_model/',
                     help='folder to output model checkpoints')
 parser.add_argument('--test-set', default= 'MSCOCO_synthesized',
                     help='Other options: notredame, yosemite')
-parser.add_argument('--num-workers', default= 8,
+parser.add_argument('--num-workers', default= 1,
                     help='Number of workers to be created')
 parser.add_argument('--pin-memory',type=bool, default= True,
                     help='')
@@ -87,7 +87,7 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--gpu-id', default='0', type=str,
+parser.add_argument('--gpu-id', default='1', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
@@ -166,7 +166,7 @@ class TNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            #nn.Dropout(0.1),
+            nn.Dropout(0.1),
             nn.Conv2d(128, 128, kernel_size=8),
             nn.BatchNorm2d(128, affine=False),
             #nn.Conv2d(1, 32, kernel_size=7),
@@ -214,7 +214,8 @@ def main(model):
         model.cuda()
 
     transform = transforms.Compose([
-        transforms.Lambda(cv2_scale),
+        transforms.Lambda(centerCrop),
+        #transforms.Lambda(cv2_scale),
         transforms.Lambda(np_reshape),
         transforms.ToTensor(),
         #transforms.Normalize((args.mean_image,), (args.std_image,))
@@ -236,7 +237,7 @@ def main(model):
         else:
             print('=> no checkpoint found at {}'.format(args.resume))
             
-    for filename,fileid in tqdm(zip(world_file_list,world_id_list)):
+    for idx,(filename,fileid) in tqdm(enumerate(zip(world_file_list,world_id_list))):
         meta = np.array([])
         features = np.array([])
         feature_file = root_dir+'/'+detector_name+'_prov_desc_'+subset+'/'+fileid+'.npz'
@@ -275,7 +276,7 @@ def main(model):
             continue
          
         offset = 0
-        meta = np.zeros((patch_number,4))
+        meta = kp_list#np.zeros((patch_number,4))
         features = []
         for data_a in test_loader:
             if args.cuda:

@@ -32,7 +32,7 @@ import cv2
 import copy
 import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
-from Losses import loss_margin_min, loss_margin_min_gor
+from Losses import loss_margin_min, loss_margin_min_gor, triplet_margin_loss_gor
 from Loggers import Logger
 from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
@@ -106,8 +106,10 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
+
 parser.add_argument('--gpu-id', default='3', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
+
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
 
@@ -122,6 +124,9 @@ parser.add_argument("--alpha", nargs='?', type=float, default = 0.0,
 
 parser.add_argument("--beta", nargs='?', type=float, default = 0.0,
                     help="beta")
+
+parser.add_argument('--show_only', action='store_true', default=False,
+                    help='enables CUDA training')
 
 args = parser.parse_args()
 
@@ -431,7 +436,9 @@ def train(train_loader, model, optimizer, epoch, logger):
             loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, anchor_ave=args.anchorave)
         elif args.loss_type == 1:
             loss = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, beta = args.beta, anchor_ave=args.anchorave)
-
+        elif args.loss_type == 2:
+            loss, _ = triplet_margin_loss_gor(out_a, out_p, out_n, beta = args.beta, margin=args.margin, swap=args.anchorswap)
+            
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -513,7 +520,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         plt.hist(neg_dists, bins, alpha = 0.5, label = 'Non-Matched Pairs')
         plt.legend(loc='upper left')
         plt.xlim(0, 2)
-        plt.ylim(0, 7e4)
+        plt.ylim(0, 2e4)
         plt.xlabel('l2')
         plt.ylabel('#Pairs')
         plt.savefig('../histogram_map/{}/iter_{}.png'.format(suffix,epoch), bbox_inches='tight')
@@ -584,7 +591,8 @@ def main(train_loader, train_sample_loader, test_loader, model, logger):
     start = args.start_epoch
     end = start + args.epochs
     for epoch in range(start, end):
-        train(train_loader, model, optimizer1, epoch, logger)
+        if not args.show_only:
+            train(train_loader, model, optimizer1, epoch, logger)
         #remove_easy(train_loader, train_sample_loader, model, epoch, logger)
         test(test_loader, model, epoch, logger, args.test_set)
 

@@ -197,10 +197,10 @@ def triplet_margin_loss(anchor, positive, negative, margin=1.0, p=2, eps=1e-6, s
     neg_dis = torch.pow(torch.sum(torch.mul(anchor,negative),1),2)
     gor = torch.mean(neg_dis)
 
-    return loss, gor
+    return loss
 
 
-def triplet_margin_loss_gor(anchor, positive, negative, alpha = 1.0, margin=1.0, p=2, eps=1e-6, swap=False):
+def triplet_margin_loss_gor(anchor, positive, negative, beta = 1.0, margin=1.0, p=2, eps=1e-6, swap=False):
     assert anchor.size() == positive.size(), "Input sizes between positive and negative must be equal."
     assert anchor.size() == negative.size(), "Input sizes between anchor and negative must be equal."
     assert positive.size() == negative.size(), "Input sizes between positive and negative must be equal."
@@ -217,7 +217,7 @@ def triplet_margin_loss_gor(anchor, positive, negative, alpha = 1.0, margin=1.0,
     neg_dis = torch.pow(torch.sum(torch.mul(anchor,negative),1),2)
     gor = torch.mean(neg_dis)
     
-    loss = torch.mean(dist_hinge) + alpha*gor
+    loss = torch.mean(dist_hinge) + beta*gor
     
     return loss, gor
 

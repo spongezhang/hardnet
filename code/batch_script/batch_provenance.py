@@ -45,8 +45,8 @@ parser.add_argument("--training", nargs='?', type=str, default = 'notredame',
 parser.add_argument("--test", nargs='?', type=str, default = 'liberty',
                     help="Training dataset name")
 
-gpu_set = ['3']
-parameter_set = ['1.0']
+gpu_set = ['0']
+parameter_set = ['0.0','1.0']
 #gpu_set = ['2']
 #parameter_set = ['1.0']
 #parameter_set = ['0.0','1.0','5.0','10.0','20.0','50.0','100.0','200']
@@ -57,14 +57,13 @@ with cd('../'):
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
 
-        command = 'python HardNet_provenance.py --fliprot=True --n-triplets=1000000 --epochs 3 --alpha={} --beta=0.0 --loss_type=0 --gpu-id {}'\
+        command = 'python HardNet_provenance.py --fliprot=False --n-triplets=1000000 --epochs 5 --alpha=0.0 --beta={} --loss_type=2 --gpu-id {}'\
                 .format(parameter,gpu_set[idx%number_gpu])
         
         print(command)
         p = subprocess.Popen(shlex.split(command))#, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         #(stdoutput,erroutput) = p.communicate()
         process_set.append(p)
-        time.sleep(120)
         
         if (idx+1)%number_gpu == 0:
             print('Wait for process end')
@@ -72,6 +71,8 @@ with cd('../'):
                 sub_process.wait()
         
             process_set = []
+
+        time.sleep(120)
     
     for sub_process in process_set:
         sub_process.wait()

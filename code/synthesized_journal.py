@@ -44,7 +44,8 @@ class synthesized_journal(data.Dataset):
         # load the serialized data
         self.data, self.labels, self.matches = torch.load(self.data_file)
         #print(type(self.data))
-        #print(self.data.shape)
+        print(self.data.shape)
+        print('max_label: {}'.format(self.labels.max()))
 
     def __getitem__(self, index):
         """
