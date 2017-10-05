@@ -32,9 +32,8 @@ import cv2
 import copy
 import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
-from Losses import loss_margin_min, loss_margin_min_gor
-from Loggers import Logger, FileLogger
-from W1BS import w1bs_extract_descs_and_save
+from Losses import loss_margin_min, loss_margin_min_gor, triplet_margin_loss_gor
+from Loggers import Logger
 from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
 from Utils import str2bool
 
@@ -51,27 +50,24 @@ import plotly.plotly as py
 parser = argparse.ArgumentParser(description='PyTorch HardNet')
 # Model options
 
-parser.add_argument('--w1bsroot', type=str,
-                    default='wxbs-descriptors-benchmark/code',
-                    help='path to dataset')
 parser.add_argument('--dataroot', type=str,
-                    default='datasets/',
+                    default='../datasets/',
                     help='path to dataset')
 parser.add_argument('--enable-logging',type=bool, default=True,
                     help='folder to output model checkpoints')
-parser.add_argument('--log-dir', default='./logs',
+parser.add_argument('--log-dir', default='../provenance_log/',
                     help='folder to output model checkpoints')
-parser.add_argument('--experiment-name', default= '/liberty_train/',
-                    help='experiment path')
-parser.add_argument('--training-set', default= 'synthesized_journals_test',
+parser.add_argument('--model-dir', default='../provenance_model/',
+                    help='folder to output model checkpoints')
+parser.add_argument('--training-set', default= 'synthesized_journals_train',
                     help='Other options: notredame, yosemite')
 parser.add_argument('--test-set', default= 'synthesized_journals_test_direct',
                     help='Other options: notredame, yosemite')
-parser.add_argument('--num-workers', default= 8,
+parser.add_argument('--num-workers', default= 1,
                     help='Number of workers to be created')
 parser.add_argument('--pin-memory',type=bool, default= True,
                     help='')
-parser.add_argument('--anchorave', type=bool, default=False,
+parser.add_argument('--anchorave', type=bool, default=True,
                     help='anchorave')
 parser.add_argument('--imageSize', type=int, default=32,
                     help='the height / width of the input image to network')
@@ -110,23 +106,33 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--gpu-id', default='2', type=str,
+
+parser.add_argument('--gpu-id', default='3', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
+
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
+
 parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
 
+parser.add_argument("--loss_type", nargs='?', type=int, default = 0,
+                    help="Number of embedding dimemsion")
+
+parser.add_argument("--alpha", nargs='?', type=float, default = 0.0,
+                    help="alpha")
+
+parser.add_argument("--beta", nargs='?', type=float, default = 0.0,
+                    help="beta")
+
+parser.add_argument('--show_only', action='store_true', default=False,
+                    help='enables CUDA training')
+
 args = parser.parse_args()
 
-dataset_names = ['liberty']
-
-# check if path to w1bs dataset testing module exists
-if os.path.isdir(args.w1bsroot):
-    sys.path.insert(0, args.w1bsroot)
-    import utils.w1bs as w1bs
-    TEST_ON_W1BS = True
-
+suffix = 'alpha{:1.1e}_beta{:1.1e}_lossType_{}'\
+        .format( args.alpha, args.beta, args.loss_type)
+        
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -157,10 +163,6 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         self.train = train
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
-        
-        #if not self.train:
-        #    print(self.data[0].numpy().shape)
-        #    print(self.data[0].numpy()[:5,30,:])
         
         if self.train:
             print('Generating {} triplets'.format(self.n_triplets))
@@ -253,7 +255,6 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         #print(type(a))
         #print(a.size())
         #exit()
-
         img_a = transform_img(a)
         img_p = transform_img(p)
         img_n = transform_img(n)
@@ -376,7 +377,6 @@ def create_loaders():
     transform = transforms.Compose([
             #transforms.Lambda(cv2_scale),
             transforms.Lambda(centerCrop),
-            #transforms.CenterCrop((32,32)),
             transforms.Lambda(np_reshape),
             transforms.ToTensor(),
             #transforms.Normalize((args.mean_image,),(args.std_image,))
@@ -449,13 +449,17 @@ def train(train_dataset, model, optimizer, epoch, logger):
         if args.cuda:
             data_a, data_p, data_n = data_a.cuda(), data_p.cuda(), data_n.cuda()
 
-        data_a, data_p,data_n = Variable(data_a), Variable(data_p), Variable(data_n)
+        data_a, data_p, data_n = Variable(data_a), Variable(data_p), Variable(data_n)
         out_a, out_p, out_n = model(data_a), model(data_p), model(data_n)
 
         #hardnet loss
-        #loss, gor = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
-        loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, anchor_ave=args.anchorave)
-
+        if args.loss_type==0:
+            loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, anchor_ave=args.anchorave)
+        elif args.loss_type == 1:
+            loss = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, beta = args.beta, anchor_ave=args.anchorave)
+        elif args.loss_type == 2:
+            loss, _ = triplet_margin_loss_gor(out_a, out_p, out_n, beta = args.beta, margin=args.margin, swap=args.anchorswap)
+            
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -463,15 +467,13 @@ def train(train_dataset, model, optimizer, epoch, logger):
 
         logger.log_value('loss', loss.data[0]).step()
 
-        #if batch_idx % args.log_interval == 0:
-        #    pbar.set_description(
-        #        'Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        #            epoch, batch_idx * len(data_a), len(train_loader.dataset),
-        #                   100. * batch_idx / len(train_loader),
-        #            loss.data[0]))
+    try:
+        os.stat('{}{}'.format(args.model_dir,suffix))
+    except:
+        os.mkdir('{}{}'.format(args.model_dir,suffix))
 
     torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
-               '{}/checkpoint_{}.pth'.format(LOG_DIR, epoch))
+               '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
 
 def remove_easy(train_dataset, train_sample_loader, model, epoch, logger):
     # switch to evaluate mode
@@ -501,10 +503,6 @@ def test(test_loader, model, epoch, logger, logger_test_name):
 
     pbar = tqdm(enumerate(test_loader))
     for batch_idx, (data_a, data_p, label) in pbar:
-        #if batch_idx == 0:
-            #print(data_a.numpy().shape)
-            #print(data_a[0,:,:10,30])
-            
         if args.cuda:
             data_a, data_p = data_a.cuda(), data_p.cuda()
 
@@ -513,32 +511,27 @@ def test(test_loader, model, epoch, logger, logger_test_name):
 
         out_a, out_p = model(data_a), model(data_p)
 
-        #if batch_idx == 0:
-            #print(out_p[0,:10])
             
         dists = torch.sqrt(torch.sum((out_a - out_p) ** 2, 1))  # euclidean distance
-        distances.append(dists.data.cpu().numpy())
+        distances.append(dists.data.cpu().numpy().reshape(-1,1))
         ll = label.data.cpu().numpy().reshape(-1, 1)
         labels.append(ll)
 
-        #if batch_idx % args.log_interval == 0:
-        #    pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
-        #        epoch, batch_idx * len(data_a), len(test_loader.dataset),
-        #               100. * batch_idx / len(test_loader)))
     
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
-    #print(distances[:200])
 
     fpr95 = ErrorRateAt95Recall(labels, distances)
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
-    
+    if (args.enable_logging):
+        logger.log_value('fpr95', fpr95)
+        
     if True:
         try: 
-            os.stat('./histogram_map/')
+            os.stat('../histogram_map/'+suffix)
         except:
-            os.mkdir('./histogram_map/')
+            os.mkdir('../histogram_map/'+suffix)
 
         bins = np.linspace(0, 2, 100)
         cos_dists = distances;
@@ -548,23 +541,27 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         plt.hist(neg_dists, bins, alpha = 0.5, label = 'Non-Matched Pairs')
         plt.legend(loc='upper left')
         plt.xlim(0, 2)
-        plt.ylim(0, 7e4)
+        plt.ylim(0, 2e4)
         plt.xlabel('l2')
         plt.ylabel('#Pairs')
-        plt.savefig('./histogram_map/iter_{}.png'.format(epoch), bbox_inches='tight')
+        plt.savefig('../histogram_map/{}/iter_{}.png'.format(suffix,epoch), bbox_inches='tight')
         plt.clf()
 
     good_match_ratio = np.sum((distances<0.3)*labels)/np.sum(labels==1)
     print('Good match ratio for test: {}'.format(good_match_ratio))
+    if (args.enable_logging):
+        logger.log_value('good_match_ratio', good_match_ratio)
 
     good_mismatch_ratio = np.sum((distances>0.8)*(1-labels))/np.sum(labels==0)
     print('Good mismatch ratio for test: {}'.format(good_mismatch_ratio))
+    if (args.enable_logging):
+        logger.log_value('good_mismatch_ratio', good_mismatch_ratio)
 
     bad_mismatch_ratio = np.sum((distances<0.4)*(1-labels))/np.sum(labels==0)
     print('Bad mismatch ratio for test: {}'.format(bad_mismatch_ratio))
-
     if (args.enable_logging):
-        logger.log_value(logger_test_name+' fpr95', fpr95)
+        logger.log_value('bad_mismatch_ratio', bad_mismatch_ratio)
+
     return
 
 def adjust_learning_rate(optimizer):
@@ -594,16 +591,11 @@ def create_optimizer(model, new_lr):
     return optimizer
 
 
-def main(train_dataset, train_sample_loader, test_loader, model, logger, file_logger):
+def main(train_loader, train_sample_loader, test_loader, model, logger):
     # print the experiment configuration
     print('\nparsed options:\n{}\n'.format(vars(args)))
-
-    if (args.enable_logging):
-        file_logger.log_string('logs.txt', '\nparsed options:\n{}\n'.format(vars(args)))
-
     if args.cuda:
         model.cuda()
-
     optimizer1 = create_optimizer(model.features, args.lr)
 
     # optionally resume from a checkpoint
@@ -620,22 +612,16 @@ def main(train_dataset, train_sample_loader, test_loader, model, logger, file_lo
     start = args.start_epoch
     end = start + args.epochs
     for epoch in range(start, end):
-
-        train(train_dataset, model, optimizer1, epoch, logger)
-        
-        remove_easy(train_dataset, train_sample_loader, model, epoch, logger)
-
+        if not args.show_only:
+            train(train_loader, model, optimizer1, epoch, logger)
+        #remove_easy(train_loader, train_sample_loader, model, epoch, logger)
         test(test_loader, model, epoch, logger, args.test_set)
 
 if __name__ == '__main__':
-
-    LOG_DIR = args.log_dir + args.experiment_name
-    logger, file_logger = None, None
+    LOG_DIR = args.log_dir + suffix
+    logger = None
     model = TNet()
-
     if(args.enable_logging):
         logger = Logger(LOG_DIR)
-        file_logger = FileLogger(LOG_DIR)
-        train_dataset, train_sample_loader, test_loader = create_loaders()
-        
-    main(train_dataset, train_sample_loader, test_loader, model, logger, file_logger)
+        train_loader, train_sample_loader, test_loader = create_loaders()
+    main(train_loader, train_sample_loader, test_loader, model, logger)

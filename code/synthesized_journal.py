@@ -2,10 +2,9 @@ import os
 import errno
 import numpy as np
 from PIL import Image
-import hickle as hkl
 import torch
 import torch.utils.data as data
-
+import hickle
 
 class synthesized_journal(data.Dataset):
     """`Learning Local Image Descriptors Data <http://phototour.cs.washington.edu/patches/default.htm>`_ Dataset.
@@ -43,7 +42,8 @@ class synthesized_journal(data.Dataset):
         # load the serialized data
         self.data, self.labels, self.matches = torch.load(self.data_file)
         #print(type(self.data))
-        #print(self.data.shape)
+        print(self.data.shape)
+        print('max_label: {}'.format(self.labels.max()))
 
     def __getitem__(self, index):
         """
@@ -97,7 +97,7 @@ def read_image_file(data_dir, dataset_name):
     """Return a Tensor containing the patches
     """
     #patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
-    patches = hkl.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
+    patches = hickle.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
     #print(patches.shape)
     return torch.ByteTensor(np.array(patches))
 

@@ -125,12 +125,16 @@ def extract_sift(img, kp_list = None):
             kp, des = sift.detectAndCompute(img,None)
         elif feature_type == 1:
             kp, des = cyvlfeat.sift.sift(img, peak_thresh=3.0, compute_descriptor=True)
+            if kp.shape[0]<10:
+                kp,des = cyvlfeat.sift.sift(img, peak_thresh=1.0, compute_descriptor=True)
     else:
         if feature_type == 0:
             kp, des = sift.compute(img,kp_list)
         elif feature_type == 1:
             kp, des = cyvlfeat.sift.sift(img, peak_thresh=3.0,\
                     compute_descriptor=True, frames=np.array(kp_list))
+            if kp.shape[0]<10:
+                kp,des = cyvlfeat.sift.sift(img, peak_thresh=1.0, compute_descriptor=True)
             
     if feature_type>0 :
         kp = kp.tolist()
