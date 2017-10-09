@@ -22,6 +22,7 @@ import torch.nn.init
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
+import torchvision.datasets as dset
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 import os
@@ -34,7 +35,7 @@ import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_margin_min, loss_margin_min_gor, triplet_margin_loss_gor
 from Loggers import Logger
-from Utils import L2Norm, cv2_scale, np_reshape, centerCrop
+from Utils import L2Norm, cv2_scale, np_reshape, centerCrop, np_reshape_grayscale, centerCropGrayScale
 from Utils import str2bool
 
 from scipy.spatial import distance
@@ -85,6 +86,8 @@ parser.add_argument('--anchorswap', type=bool, default=True,
                     help='turns on anchor swap')
 parser.add_argument('--batch-size', type=int, default=128, metavar='BS',
                     help='input batch size for training (default: 128)')
+parser.add_argument('--num_channel', type=int, default=3,
+                    help='number of channels in image')
 parser.add_argument('--test-batch-size', type=int, default=1024, metavar='BST',
                     help='input batch size for testing (default: 1000)')
 parser.add_argument('--n-triplets', type=int, default=5000000, metavar='N',
@@ -107,32 +110,31 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 
+parser.add_argument('--provenance', action='store_true', default=False,
+                    help='provenance dataset')
 parser.add_argument('--gpu-id', default='3', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
-
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
-
 parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
-
 parser.add_argument("--loss_type", nargs='?', type=int, default = 0,
                     help="Number of embedding dimemsion")
-
 parser.add_argument("--alpha", nargs='?', type=float, default = 0.0,
                     help="alpha")
-
 parser.add_argument("--beta", nargs='?', type=float, default = 0.0,
                     help="beta")
-
 parser.add_argument('--show_only', action='store_true', default=False,
                     help='enables CUDA training')
-
 args = parser.parse_args()
 
-suffix = 'alpha{:1.1e}_beta{:1.1e}_lossType_{}'\
-        .format( args.alpha, args.beta, args.loss_type)
-        
+if args.provenance:
+    suffix = 'alpha{:1.1e}_beta{:1.1e}_lossType_{}'\
+        .format(args.training_set, args.test_set, args.alpha, args.beta, args.loss_type)
+else:        
+    suffix = '{}_{}_beta{:1.1e}_lossType_{}'\
+        .format(args.training_set, args.test_set, args.alpha, args.beta, args.loss_type)
+
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -198,8 +200,12 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
             else:
-                n1 = 0#np.random.randint(0, len(indices[c1]) - 1)
-                n2 = np.random.randint(1, len(indices[c1]) - 1)
+                if args.provenance:
+                    n1 = 0#np.random.randint(0, len(indices[c1]) - 1)
+                    n2 = np.random.randint(1, len(indices[c1]) - 1)
+                else:
+                    n1 = np.random.randint(0, len(indices[c1]) - 1)
+                    n2 = np.random.randint(0, len(indices[c1]) - 1)
                 while n1 == n2:
                     n2 = np.random.randint(0, len(indices[c1]) - 1)
             n3 = np.random.randint(0, len(indices[c2]) - 1)
@@ -315,7 +321,7 @@ class TNet(nn.Module):
         super(TNet, self).__init__()
         
         self.features = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.Conv2d(args.num_channel, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32, affine=False),
             nn.ReLU(),
             nn.Conv2d(32, 32, kernel_size=3, padding=1),
@@ -373,17 +379,26 @@ def weights_init(m):
 
 def create_loaders():
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
-
-    transform = transforms.Compose([
-            #transforms.Lambda(cv2_scale),
-            transforms.Lambda(centerCrop),
-            transforms.Lambda(np_reshape),
-            transforms.ToTensor(),
-            #transforms.Normalize((args.mean_image,),(args.std_image,))
-            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
-                (args.std_image,args.std_image,args.std_image))
-            ])
-
+    if args.provenance:
+        transform = transforms.Compose([
+                #transforms.Lambda(cv2_scale),
+                transforms.Lambda(centerCrop),
+                transforms.Lambda(np_reshape),
+                transforms.ToTensor(),
+                #transforms.Normalize((args.mean_image,),(args.std_image,))
+                transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                    (args.std_image,args.std_image,args.std_image))
+                ])
+    else:
+        transform = transforms.Compose([
+                transforms.Lambda(cv2_scale),
+                #transforms.Lambda(centerCrop),
+                transforms.Lambda(np_reshape_grayscale),
+                transforms.ToTensor(),
+                transforms.Normalize((args.mean_image,),(args.std_image,))
+                #transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                #    (args.std_image,args.std_image,args.std_image))
+                ])
     #train_loader = torch.utils.data.DataLoader(
     #        TripletPhotoTour(train=True,
     #                         batch_size=args.batch_size,
@@ -428,16 +443,6 @@ def train(train_dataset, model, optimizer, epoch, logger):
     model.train()
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
-    transform = transforms.Compose([
-            #transforms.Lambda(cv2_scale),
-            transforms.Lambda(centerCrop),
-            transforms.Lambda(np_reshape),
-            transforms.ToTensor(),
-            #transforms.Normalize((args.mean_image,),(args.std_image,))
-            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
-                (args.std_image,args.std_image,args.std_image))
-            ])
-
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
                              shuffle=False, **kwargs)
 
@@ -456,7 +461,7 @@ def train(train_dataset, model, optimizer, epoch, logger):
         if args.loss_type==0:
             loss = loss_margin_min(out_a, out_p, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, anchor_ave=args.anchorave)
         elif args.loss_type == 1:
-            loss = loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, beta = args.beta, anchor_ave=args.anchorave)
+            loss, _= loss_margin_min_gor(out_a, out_p, out_n, margin=args.margin, anchor_swap=args.anchorswap, alpha = args.alpha, beta = args.beta, anchor_ave=args.anchorave)
         elif args.loss_type == 2:
             loss, _ = triplet_margin_loss_gor(out_a, out_p, out_n, beta = args.beta, margin=args.margin, swap=args.anchorswap)
             

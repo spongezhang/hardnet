@@ -142,7 +142,7 @@ def loss_margin_min_gor(anchor, positive, negative, anchor_swap = False, anchor_
     gor = torch.mean(neg_dis)
 
     loss = torch.mean(dist_hinge) + alpha*torch.mean(torch.pow(pos,2)) + beta*gor
-    return loss
+    return loss, gor
 
 
 def triplet_margin_loss(anchor, positive, negative, margin=1.0, p=2, eps=1e-6, swap=False):
@@ -185,5 +185,5 @@ def triplet_margin_loss_gor(anchor, positive, negative, beta = 1.0, margin=1.0, 
     
     loss = torch.mean(dist_hinge) + beta*gor
     
-    return loss
+    return loss, gor
 

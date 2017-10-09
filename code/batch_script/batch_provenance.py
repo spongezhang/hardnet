@@ -42,10 +42,10 @@ parser.add_argument("--learning_rate", nargs='?', type=float, default = 0.1,
 parser.add_argument("--training", nargs='?', type=str, default = 'notredame',
                     help="Training dataset name")
 
-parser.add_argument("--test", nargs='?', type=str, default = 'liberty',
+parser.add_argument("--test", nargs='?', type=str, default = 'yosemite',
                     help="Training dataset name")
-
-gpu_set = ['0']
+args = parser.parse_args()
+gpu_set = ['0','1']
 parameter_set = ['0.0','1.0']
 #gpu_set = ['2']
 #parameter_set = ['1.0']
@@ -57,9 +57,12 @@ with cd('../'):
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
 
-        command = 'python HardNet_provenance.py --fliprot=False --n-triplets=1000000 --epochs 5 --alpha=0.0 --beta={} --loss_type=2 --gpu-id {}'\
-                .format(parameter,gpu_set[idx%number_gpu])
+        #command = 'python HardNet_provenance.py --fliprot=False --provenance --n-triplets=1000000 --epochs 10 --alpha=0.0 --beta={} --loss_type=1 --gpu-id {}'\
+        #        .format(parameter,gpu_set[idx%number_gpu])
         
+        command = 'python HardNet_provenance.py --training-set {} --test-set {} --fliprot=False --n-triplets=1000000 --epochs 10 --alpha=0.0 --num_channel 1 --beta={} --loss_type=1 --gpu-id {} --log-dir ../ubc_log/ --model-dir ../ubc_model'\
+                .format(args.training, args.test, parameter,gpu_set[idx%number_gpu])
+
         print(command)
         p = subprocess.Popen(shlex.split(command))#, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         #(stdoutput,erroutput) = p.communicate()
@@ -72,7 +75,7 @@ with cd('../'):
         
             process_set = []
 
-        time.sleep(120)
+        time.sleep(60)
     
     for sub_process in process_set:
         sub_process.wait()
