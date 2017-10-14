@@ -39,6 +39,14 @@ from Utils import str2bool
 import torch.nn as nn
 import torch.nn.functional as F
 
+import scipy.io as sio
+import matplotlib as mpl
+if os.environ.get('DISPLAY','') == '':
+    print('no display found. Using non-interactive Agg backend')
+    mpl.use('Agg')
+import matplotlib.pyplot as plt
+import plotly.plotly as py
+
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
         super(CorrelationPenaltyLoss, self).__init__()
@@ -362,7 +370,7 @@ def create_loaders(load_random_triplets = False):
 
     return train_loader, test_loaders
 
-def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False):
+def train(train_loader, test_loaders, model, optimizer, epoch, logger, load_triplets  = False):
     # switch to train mode
     model.train()
     pbar = tqdm(enumerate(train_loader))
@@ -408,6 +416,24 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
         loss.backward()
         optimizer.step()
         adjust_learning_rate(optimizer)
+        
+       # if epoch == 0 and batch_idx<=10:
+       #     args.log_interval = 1
+        if epoch == 0 and batch_idx<=100:
+            args.log_interval = int(batch_idx/10) + 1
+        elif epoch == 0 and batch_idx<=1000:
+            #args.log_interval = int(batch_idx/100)*10
+            args.log_interval = 100
+        elif epoch == 0:
+            #args.log_interval = int(batch_idx/1000)*100
+            args.log_interval = 500
+        else:
+            args.log_interval = 500
+
+        if batch_idx%args.log_interval == 0: 
+            for test_loader in test_loaders:
+                test(test_loader['dataloader'], model, epoch+1, batch_idx, logger, test_loader['name'])
+            model.train()
 
     if (args.enable_logging):
         logger.log_value('loss', loss.data[0]).step()
@@ -420,14 +446,13 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
     torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
 
-def test(test_loader, model, epoch, logger, logger_test_name):
+def test(test_loader, model, epoch, iteration, logger, logger_test_name):
     # switch to evaluate mode
     model.eval()
 
     labels, distances = [], []
 
-    pbar = tqdm(enumerate(test_loader))
-    for batch_idx, (data_a, data_p, label) in pbar:
+    for batch_idx, (data_a, data_p, label) in enumerate(test_loader):
 
         if args.cuda:
             data_a, data_p = data_a.cuda(), data_p.cuda()
@@ -441,20 +466,68 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         ll = label.data.cpu().numpy().reshape(-1, 1)
         labels.append(ll)
 
-        if batch_idx % args.log_interval == 0:
-            pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
-                epoch, batch_idx * len(data_a), len(test_loader.dataset),
-                       100. * batch_idx / len(test_loader)))
-
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
 
     fpr95 = ErrorRateAt95Recall(labels, 1.0 / (distances + 1e-8))
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
+    
+    try: 
+        os.stat('../histogram_map/{}_{}_{}/'.format(args.training_set, logger_test_name, suffix))
+    except:
+        os.makedirs('../histogram_map/{}_{}_{}/'.format(args.training_set, logger_test_name, suffix))
+
+    SMALL_SIZE = 14
+    MEDIUM_SIZE = 20
+    BIGGER_SIZE = 24
+
+    plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+    plt.rc('axes', titlesize=MEDIUM_SIZE)     # fontsize of the axes title
+    plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+    plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+    plt.rc('legend', fontsize=BIGGER_SIZE)    # legend fontsize
+    plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
+    #bins = np.linspace(0, 2, 100)
+    #bins = np.linspace(-0.6, 1, 100)
+    bins = np.linspace(0, 1.6, 100)
+    cos_dists = 1 - (2-pow(distances,2))/2
+    pos_dists = cos_dists[labels==1]
+    neg_dists = cos_dists[labels==0]
+    plt.hist(pos_dists, bins, alpha = 0.5, label = 'Matched Pairs')
+    plt.hist(neg_dists, bins, alpha = 0.5, label = 'Non-Matched Pairs')
+    plt.legend(loc='upper right')
+    #plt.suptitle('Epoch: {:02d} Iter: {:04d}'.format(epoch+1, iteration+1), fontsize=18)
+    plt.xlim(0,1.6)
+    ticks = np.arange(0,1.7,0.2)
+    #plt.set_xticks(range(0,1.7,0.1))
+    #results = ["1", "2", "3"]
+    
+    tick_label = [str(1 - i) for i in ticks]
+    plt.xticks(ticks, tick_label)
+    #plt.xlim(-0.6, 1)
+    #plt.xlim(0, 2)
+    plt.ylim(0, 6000)
+    plt.xlabel('Cosine Distance')
+    plt.ylabel('#Pairs')
+    plt.savefig('../histogram_map/{}_{}_{}/epoch_{:02d}_iter_{:04d}.png'.format(args.training_set, logger_test_name, suffix, epoch, iteration), bbox_inches='tight')
+    plt.clf()
+    
+    try: 
+        os.stat('../distance_mat/{}_{}_{}'.format(args.training_set, logger_test_name, suffix))
+    except:
+        os.makedirs('../distance_mat/{}_{}_{}'.format(args.training_set, logger_test_name, suffix))
+
+    save_object = np.zeros((2,), dtype=np.object)
+    save_object[0] = distances
+    save_object[1] = labels
+    sio.savemat('../distance_mat/{}_{}_{}/epoch_{:02d}_iter_{:04d}.mat'.format(args.training_set, logger_test_name, suffix, epoch, iteration),\
+            {'save_object':save_object})
 
     if (args.enable_logging):
-        logger.log_value(logger_test_name+' fpr95', fpr95)
+        logger.log_value(logger_test_name + ' fpr95', fpr95)
     return
 
 def adjust_learning_rate(optimizer):
@@ -512,9 +585,9 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     end = start + args.epochs
     for epoch in range(start, end):
         # iterate over test loaders and test results
-        train(train_loader, model, optimizer1, epoch, logger, triplet_flag)
-        for test_loader in test_loaders:
-            test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        train(train_loader, test_loaders, model, optimizer1, epoch, logger, triplet_flag)
+        #for test_loader in test_loaders:
+        #    test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
         
         if TEST_ON_W1BS :
             # print(weights_path)
@@ -529,7 +602,6 @@ def main(train_loader, test_loaders, model, logger, file_logger):
                 w1bs_extract_descs_and_save(img_fname, model, desc_name, cuda = args.cuda,
                                             mean_img=args.mean_image,
                                             std_img=args.std_image, out_dir = DESCS_DIR)
-
 
             force_rewrite_list = [desc_name]
             w1bs.match_descriptors_and_save_results(DESC_DIR=DESCS_DIR, do_rewrite=True,
