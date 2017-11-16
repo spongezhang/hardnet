@@ -41,14 +41,14 @@ parameter_set = ['False','True']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-datasets = ['notredame']
+datasets = ['yosemite']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python HardNet.py --training-set {} --fliprot=False --n-triplets=1000000 --batch-size=128 --epochs 10 --gor={} --w1bsroot=None --gpu-id {} --log-dir ../ubc_log/ --enable-logging=True --batch-reduce=min --model-dir ../ubc_model/ '\
+        command = 'python HardNet.py --training-set {} --fliprot=False --n-triplets=1000000 --batch-size=128 --epochs 3 --gor={} --w1bsroot=None --gpu-id {} --log-dir ../ubc_log/ --enable-logging=True --batch-reduce=min --model-dir ../ubc_model/ '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)

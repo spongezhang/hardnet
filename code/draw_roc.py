@@ -41,8 +41,10 @@ def ROC_Curve(labels, scores, fpr_point):
 
 
 if __name__ == "__main__":
-    setting = 'notredame_yosemite_notredame_random_global'
+    #setting = 'notredame_yosemite_notredame_random_global'
+    setting = 'liberty_notredame_liberty_random_global'
     method_list = [setting+'_as', setting+'_gor_alpha1.0_as']
+    #method_label = ['Triplet','Triplet+GOR(Ours)']
     method_label = ['Triplet','Triplet+GOR(Ours)']
     recall_list = []
     distance_dir = '../distance_mat/'
@@ -82,13 +84,15 @@ if __name__ == "__main__":
             
             
             plt.plot(fpr_point, recall_list[0], 'b', fpr_point, recall_list[1], 'r')
-            plt.suptitle('Epoch: {:02d} Iter: {:04d}'.format(epoch, iter_num), fontsize=24)
-            plt.ylim([0.0,1.0])
-            plt.xlim([0,0.5])
+            #plt.suptitle('Epoch: {:02d} Iter: {:04d}'.format(epoch, iter_num), fontsize=24)
+            plt.ylim([0.8,1.0])
+            plt.xlim([0,0.3])
+            plt.yticks(np.arange(0.8,1.01,0.1))
+            plt.xticks(np.arange(0,0.31,0.1))
             plt.xlabel('FPR(%)')
             plt.ylabel('TPR(%)')
             plt.legend(method_label)
-            plt.legend(loc='bottom right')
+            plt.legend(loc='top right')
             try:
                 os.stat('../roc/'+setting)
             except:

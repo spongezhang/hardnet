@@ -34,7 +34,7 @@ import copy
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_HardNet, loss_random_sampling, loss_L2Net, global_orthogonal_regularization
 from W1BS import w1bs_extract_descs_and_save
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape, NormedLinear
 from Utils import str2bool
 import torch.nn as nn
 import torch.nn.functional as F
@@ -135,7 +135,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
-parser.add_argument('--seed', type=int, default=0, metavar='S',
+parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 0)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
@@ -284,7 +284,7 @@ class TripletPhotoTour(dset.PhotoTour):
 class HardNet(nn.Module):
     """HardNet model definition
     """
-    def __init__(self):
+    def __init__(self, n_classes):
         super(HardNet, self).__init__()
         self.features = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=3, padding=1, bias = False),
@@ -310,6 +310,7 @@ class HardNet(nn.Module):
             nn.BatchNorm2d(128, affine=False),
         )
         self.features.apply(weights_init)
+        self.NormedLinear = NormedLinear(128, n_classes)
         return
     
     def input_norm(self,x):
@@ -321,6 +322,7 @@ class HardNet(nn.Module):
     def forward(self, input):
         x_features = self.features(self.input_norm(input))
         x = x_features.view(x_features.size(0), -1)
+
         return L2Norm()(x)
 
 def weights_init(m):
@@ -419,21 +421,21 @@ def train(train_loader, test_loaders, model, optimizer, epoch, logger, load_trip
         
        # if epoch == 0 and batch_idx<=10:
        #     args.log_interval = 1
-        if epoch == 0 and batch_idx<=100:
-            args.log_interval = int(batch_idx/10) + 1
-        elif epoch == 0 and batch_idx<=1000:
-            #args.log_interval = int(batch_idx/100)*10
-            args.log_interval = 100
-        elif epoch == 0:
-            #args.log_interval = int(batch_idx/1000)*100
-            args.log_interval = 500
-        else:
-            args.log_interval = 500
+        #if epoch == 0 and batch_idx<=100:
+        #    args.log_interval = int(batch_idx/10) + 1
+        #elif epoch == 0 and batch_idx<=1000:
+        #    #args.log_interval = int(batch_idx/100)*10
+        #    args.log_interval = 100
+        #elif epoch == 0:
+        #    #args.log_interval = int(batch_idx/1000)*100
+        #    args.log_interval = 500
+        #else:
+        #    args.log_interval = 500
 
-        if batch_idx%args.log_interval == 0: 
-            for test_loader in test_loaders:
-                test(test_loader['dataloader'], model, epoch+1, batch_idx, logger, test_loader['name'])
-            model.train()
+        #if batch_idx%args.log_interval == 0: 
+        #    for test_loader in test_loaders:
+        #        test(test_loader['dataloader'], model, epoch+1, batch_idx, logger, test_loader['name'])
+        #    model.train()
 
     if (args.enable_logging):
         logger.log_value('loss', loss.data[0]).step()
@@ -586,8 +588,8 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     for epoch in range(start, end):
         # iterate over test loaders and test results
         train(train_loader, test_loaders, model, optimizer1, epoch, logger, triplet_flag)
-        #for test_loader in test_loaders:
-        #    test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        for test_loader in test_loaders:
+            test(test_loader['dataloader'], model, epoch, 0, logger, test_loader['name'])
         
         if TEST_ON_W1BS :
             # print(weights_path)

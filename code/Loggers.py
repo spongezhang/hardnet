@@ -24,14 +24,15 @@ class Logger(object):
     def __init__(self, log_dir):
         # clean previous logged data under the same directory name
         self._remove(log_dir)
-
         # configure the project
         configure(log_dir)
-
         self.global_step = 0
 
-    def log_value(self, name, value):
-        log_value(name, value, self.global_step)
+    def log_value(self, name, value, step = -1):
+        if step == -1:
+            log_value(name, value, self.global_step)
+        else:
+            log_value(name, value, step)
         return self
 
     def step(self):
