@@ -131,10 +131,19 @@ parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 0)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--no-hinge', action='store_true', default=False,
+                    help='enables CUDA training')
+parser.add_argument('--no-mask', action='store_true', default=False,
+                    help='enables CUDA training')
+parser.add_argument('--inner-product', action='store_true', default=False,
+                    help='enables CUDA training')
 
 args = parser.parse_args()
 
-suffix = '{}_{}'.format(args.training_set, args.batch_reduce)
+suffix = '{}_{}_{}'.format(args.training_set, args.batch_reduce, args.loss)
+
+if args.loss == 'classification':
+    suffix = suffix + '_m_{}'.format(args.margin)
 
 if args.gor:
     suffix = suffix+'_gor_alpha{:1.1f}'.format(args.alpha)
@@ -142,6 +151,12 @@ if args.anchorswap:
     suffix = suffix + '_as'
 if args.anchorave:
     suffix = suffix + '_av'
+if args.no_hinge:
+    suffix = suffix + '_nh'
+if args.inner_product:
+    suffix = suffix + '_ip'
+if args.no_mask:
+    suffix = suffix + '_nm'
 
 triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
 
@@ -395,6 +410,9 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
                             margin=args.margin,
                             anchor_swap=args.anchorswap,
                             anchor_ave=args.anchorave,
+                            no_hinge = args.no_hinge, 
+                            no_mask = args.no_mask, 
+                            inner_product = args.inner_product,
                             batch_reduce = args.batch_reduce,
                             loss_type = args.loss)
 
