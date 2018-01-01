@@ -31,13 +31,15 @@ import numpy as np
 import random
 import cv2
 import copy
+import synthesized_journal
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_HardNet, loss_random_sampling, loss_L2Net, global_orthogonal_regularization
 from W1BS import w1bs_extract_descs_and_save
-from Utils import L2Norm, cv2_scale, np_reshape
+from Utils import L2Norm, cv2_scale, np_reshape_color, centerCrop
 from Utils import str2bool
 import torch.nn as nn
 import torch.nn.functional as F
+import pdb
 
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
@@ -64,13 +66,11 @@ parser.add_argument('--dataroot', type=str,
                     help='path to dataset')
 parser.add_argument('--enable-logging',type=bool, default=False,
                     help='output to tensorlogger')
-parser.add_argument('--log-dir', default='../logs',
+parser.add_argument('--log-dir', default='../provenance_log/',
                     help='folder to output log')
-parser.add_argument('--model-dir', default='../models',
+parser.add_argument('--model-dir', default='../provenance_model/',
                     help='folder to output model checkpoints')
-parser.add_argument('--experiment-name', default= '/liberty_train/',
-                    help='experiment path')
-parser.add_argument('--training-set', default= 'liberty',
+parser.add_argument('--training-set', default= 'synthesized_journals_2_train',
                     help='Other options: notredame, yosemite')
 parser.add_argument('--loss', default= 'triplet_margin',
                     help='Other options: softmax, contrastive')
@@ -125,6 +125,8 @@ parser.add_argument('--optimizer', default='sgd', type=str,
 # Device options
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--data_augment', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
@@ -157,10 +159,12 @@ if args.inner_product:
     suffix = suffix + '_ip'
 if args.no_mask:
     suffix = suffix + '_nm'
+if args.data_augment:
+    suffix = suffix + '_da'
 
 triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
 
-dataset_names = ['liberty', 'notredame', 'yosemite']
+dataset_names = ['synthesized_journals_2_train', 'synthesized_journals_2_test']
 
 TEST_ON_W1BS = False
 # check if path to w1bs dataset testing module exists
@@ -187,13 +191,13 @@ if not os.path.exists(args.log_dir):
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-class TripletPhotoTour(dset.PhotoTour):
+class TripletPhotoTour(synthesized_journal.synthesized_journal):
     """
     From the PhotoTour Dataset it generates triplet samples
     note: a triplet is composed by a pair of matching images and one of
     different class.
     """
-    def __init__(self, train=True, transform=None, batch_size = None,load_random_triplets = False,  *arg, **kw):
+    def __init__(self, train=True, transform=None, batch_size = None, load_random_triplets = False,  *arg, **kw):
         super(TripletPhotoTour, self).__init__(*arg, **kw)
         self.transform = transform
         self.out_triplets = load_random_triplets
@@ -253,30 +257,52 @@ class TripletPhotoTour(dset.PhotoTour):
             m = self.matches[index]
             img1 = transform_img(self.data[m[0]])
             img2 = transform_img(self.data[m[1]])
+            img1 = torch.from_numpy(deepcopy(img1.numpy()[:,7:39,7:39]))
+            img2 = torch.from_numpy(deepcopy(img2.numpy()[:,7:39,7:39]))
             return img1, img2, m[2]
-
+        
         t = self.triplets[index]
         a, p, n = self.data[t[0]], self.data[t[1]], self.data[t[2]]
-
+        
         img_a = transform_img(a)
         img_p = transform_img(p)
         img_n = None
         if self.out_triplets:
             img_n = transform_img(n)
-        # transform images if required
-        if args.fliprot:
-            do_flip = random.random() > 0.5
-            do_rot = random.random() > 0.5
-            if do_rot:
-                img_a = img_a.permute(0,2,1)
-                img_p = img_p.permute(0,2,1)
-                if self.out_triplets:
-                    img_n = img_n.permute(0,2,1)
-            if do_flip:
-                img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,:,::-1]))
-                img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
-                if self.out_triplets:
-                    img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
+        if not args.data_augment:
+            #pass
+            img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,7:39,7:39]))
+            img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,7:39,7:39]))
+            if self.out_triplets:
+                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,7:39,7:39]))
+        else:
+            random_x = random.randint(0,8)
+            random_y = random.randint(0,8)
+            img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,random_y:(random_y+32),\
+                    random_x:(random_x+32)]))
+            random_x = random.randint(0,8)
+            random_y = random.randint(0,8)
+            img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,random_y:(random_y+32),\
+                    random_x:(random_x+32)]))
+            if self.out_triplets:
+                random_x = random.randint(0,8)
+                random_y = random.randint(0,8)
+                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,random_y:(random_y+32),\
+                    random_x:(random_x+32)]))
+            # transform images if required
+            if args.fliprot:
+                do_flip = random.random() > 0.5
+                do_rot = random.random() > 0.5
+                if do_rot:
+                    img_a = img_a.permute(0,2,1)
+                    img_p = img_p.permute(0,2,1)
+                    if self.out_triplets:
+                        img_n = img_n.permute(0,2,1)
+                if do_flip:
+                    img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,:,::-1]))
+                    img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
+                    if self.out_triplets:
+                        img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
         if self.out_triplets:
             return (img_a, img_p, img_n)
         else:
@@ -294,7 +320,7 @@ class HardNet(nn.Module):
     def __init__(self):
         super(HardNet, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1, bias = False),
+            nn.Conv2d(3, 32, kernel_size=3, padding=1, bias = False),
             nn.BatchNorm2d(32, affine=False),
             nn.ReLU(),
             nn.Conv2d(32, 32, kernel_size=3, padding=1, bias = False),
@@ -320,13 +346,23 @@ class HardNet(nn.Module):
         return
     
     def input_norm(self,x):
-        flat = x.view(x.size(0), -1)
-        mp = torch.sum(flat, dim=1) / (32. * 32.)
-        sp = torch.std(flat, dim=1) + 1e-7
-        return (x - mp.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(-1).unsqueeze(1).expand_as(x)
+        flat = x.view(x.size(0), 3, -1)
+        mp = torch.sum(flat, dim=2) / (32. * 32.)
+        sp = torch.std(flat, dim=2) + 1e-7
+        return (x - mp.unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(1).expand_as(x)
     
-    def forward(self, input):
+    def forward_2(self, input):
         x_features = self.features(self.input_norm(input))
+        x = x_features.view(x_features.size(0), -1)
+        return L2Norm()(x)
+
+    def forward(self, input):
+        flat = input.view(input.size(0), -1)
+        #mp = args.mean-image#torch.sum(flat, dim=1) / (32. * 32.)
+        #sp = args.std-image#torch.std(flat, dim=1) + 1e-7
+        #x_features = self.features(
+            #(input - mp.unsqueeze(-1).unsqueeze(-1).expand_as(input)) / sp.unsqueeze(-1).unsqueeze(1).expand_as(input))
+        x_features = self.features(input)
         x = x_features.view(x_features.size(0), -1)
         return L2Norm()(x)
 
@@ -342,15 +378,17 @@ def weights_init(m):
 def create_loaders(load_random_triplets = False):
 
     test_dataset_names = copy.copy(dataset_names)
-    #test_dataset_names.remove(args.training_set)
+    test_dataset_names.remove(args.training_set)
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
     transform = transforms.Compose([
-            transforms.Lambda(cv2_scale),
-            transforms.Lambda(np_reshape),
+            #transforms.Lambda(cv2_scale),
+            transforms.Lambda(centerCrop),
+            transforms.Lambda(np_reshape_color),
             transforms.ToTensor(),
-            transforms.Normalize((args.mean_image,), (args.std_image,))])
+            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+                (args.std_image,args.std_image,args.std_image))])
 
     train_loader = torch.utils.data.DataLoader(
             TripletPhotoTour(train=True,
@@ -396,7 +434,7 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
             data_n  = data_n.cuda()
             data_n = Variable(data_n)
             out_n = model(data_n)
-
+        
         if args.batch_reduce == 'L2Net':
             loss = loss_L2Net(out_a, out_p, anchor_swap = args.anchorswap,
                     margin = args.margin, loss_type = args.loss)
@@ -459,11 +497,6 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         ll = label.data.cpu().numpy().reshape(-1, 1)
         labels.append(ll)
 
-        if batch_idx % args.log_interval == 0:
-            pbar.set_description(logger_test_name+' Test Epoch: {} [{}/{} ({:.0f}%)]'.format(
-                epoch, batch_idx * len(data_a), len(test_loader.dataset),
-                       100. * batch_idx / len(test_loader)))
-
     num_tests = test_loader.dataset.matches.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
@@ -503,11 +536,7 @@ def create_optimizer(model, new_lr):
 
 
 def main(train_loader, test_loaders, model, logger, file_logger):
-    # print the experiment configuration
     print('\nparsed options:\n{}\n'.format(vars(args)))
-
-    #if (args.enable_logging):
-    #    file_logger.log_string('logs.txt', '\nparsed options:\n{}\n'.format(vars(args)))
 
     if args.cuda:
         model.cuda()
@@ -525,7 +554,6 @@ def main(train_loader, test_loaders, model, logger, file_logger):
         else:
             print('=> no checkpoint found at {}'.format(args.resume))
             
-    
     start = args.start_epoch
     end = start + args.epochs
     for epoch in range(start, end):
@@ -534,52 +562,16 @@ def main(train_loader, test_loaders, model, logger, file_logger):
         for test_loader in test_loaders:
             test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
         
-        if TEST_ON_W1BS :
-            # print(weights_path)
-            patch_images = w1bs.get_list_of_patch_images(
-                DATASET_DIR=args.w1bsroot.replace('/code', '/data/W1BS'))
-            desc_name = 'curr_desc'# + str(random.randint(0,100))
-            
-            DESCS_DIR = LOG_DIR + '/temp_descs/' #args.w1bsroot.replace('/code', "/data/out_descriptors")
-            OUT_DIR = DESCS_DIR.replace('/temp_descs/', "/out_graphs/")
-
-            for img_fname in patch_images:
-                w1bs_extract_descs_and_save(img_fname, model, desc_name, cuda = args.cuda,
-                                            mean_img=args.mean_image,
-                                            std_img=args.std_image, out_dir = DESCS_DIR)
-
-
-            force_rewrite_list = [desc_name]
-            w1bs.match_descriptors_and_save_results(DESC_DIR=DESCS_DIR, do_rewrite=True,
-                                                    dist_dict={},
-                                                    force_rewrite_list=force_rewrite_list)
-            if(args.enable_logging):
-                w1bs.draw_and_save_plots_with_loggers(DESC_DIR=DESCS_DIR, OUT_DIR=OUT_DIR,
-                                         methods=["SNN_ratio"],
-                                         descs_to_draw=[desc_name],
-                                         logger=file_logger,
-                                         tensor_logger = logger)
-            else:
-                w1bs.draw_and_save_plots(DESC_DIR=DESCS_DIR, OUT_DIR=OUT_DIR,
-                                         methods=["SNN_ratio"],
-                                         descs_to_draw=[desc_name],
-                                         really_draw = False)
-
 if __name__ == '__main__':
     LOG_DIR = args.log_dir
     if not os.path.isdir(LOG_DIR):
         os.makedirs(LOG_DIR)
     LOG_DIR = args.log_dir + suffix
-    DESCS_DIR = LOG_DIR + 'temp_descs'
-    if TEST_ON_W1BS:
-        if not os.path.isdir(DESCS_DIR):
-            os.makedirs(DESCS_DIR)
     logger, file_logger = None, None
     model = HardNet()
     if(args.enable_logging):
         from Loggers import Logger, FileLogger
         logger = Logger(LOG_DIR)
         #file_logger = FileLogger(./log/+suffix)
-
     train_loader, test_loaders = create_loaders(load_random_triplets = triplet_flag)
     main(train_loader, test_loaders, model, logger, file_logger)

@@ -3,12 +3,20 @@ import torch.nn.init
 import torch.nn as nn
 import cv2
 import numpy as np
+import random
+
+image_size = 48
 
 # resize image to size 32x32
-cv2_scale = lambda x: cv2.resize(x, dsize=(32, 32),
+cv2_scale = lambda x: cv2.resize(x, dsize=(image_size, image_size),
                                  interpolation=cv2.INTER_LINEAR)
 # reshape image
-np_reshape = lambda x: np.reshape(x, (32, 32, 1))
+np_reshape = lambda x: np.reshape(x, (image_size, image_size, 1))
+
+np_reshape_color = lambda x: np.reshape(x, (image_size, image_size, 3))
+
+centerCrop = lambda x: x[7:55,7:55,:]
+#centerCrop = lambda x: x[15:47,15:47,:]
 
 class L2Norm(nn.Module):
     def __init__(self):

@@ -1,6 +1,6 @@
 """
-Check the correctness of gor on triple loss using multiple GPUs
-Usage: check_gor_triplet.py
+Check the correctness of gor on HardNet loss using multiple GPUs
+Usage: check_gor_HardNet.py
 
 Author: Xu Zhang
 Email: xu.zhang@columbia.edu.cn
@@ -17,8 +17,9 @@ import pandas as pd
 import subprocess
 import shlex
 import argparse
-
-
+####################################################################
+# Parse command line
+####################################################################
 def usage():
     print >> sys.stderr 
     sys.exit(1)
@@ -35,20 +36,19 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0','1']
-#parameter_set = ['--no-mask', '--no-hinge', '--inner-product', '--no-hinge, --no-mask']
+gpu_set = ['0']
+parameter_set = ['False']
 number_gpu = len(gpu_set)
 
-#parameter_set = [' --inner-product --loss=softmax', '--loss=classification']#, 
-parameter_set = [5.0, 10.0]#, 
-datasets = ['notredame']
+#datasets = ['notredame', 'yosemite', 'liberty']
+datasets = ['synthesized_journals_2_train']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python HardNet.py --training-set {} --fliprot=False --n-triplets=1000000 --batch-size=128 --epochs 5 --w1bsroot=None --loss=classification --margin={} --log-dir ../ubc_log/ --enable-logging=True --batch-reduce=min --model-dir ../ubc_model/ --gpu-id {}' \
+        command = 'python HardNet_provenance.py --training-set {} --fliprot=False --n-triplets=1000000 --batch-size=128 --epochs 10 --gor={} --w1bsroot=None --gpu-id {} --log-dir ../provenance_log/ --enable-logging=True --batch-reduce=min --data_augment '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)

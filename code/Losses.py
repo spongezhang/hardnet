@@ -97,11 +97,19 @@ def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_h
     assert anchor.dim() == 2, "Inputd must be a 2D matrix."
     eps = 1e-8
     if loss_type == 'classification':
-        dist_matrix = inner_product_matrix(anchor, positive)
+        dist_matrix = margin * inner_product_matrix(anchor, positive)
+        eye = torch.autograd.Variable(torch.eye(dist_matrix.size(1))).cuda()
         pos = torch.diag(dist_matrix)
-        exp_pos = torch.exp((margin*margin)*pos)
-        exp_den = torch.sum(torch.exp((margin*margin)*dist_matrix), 1)
-        loss = - torch.log( exp_pos / exp_den )
+        ip_without_diag = dist_matrix - eye*10
+        mask = ip_without_diag.ge(0.05)
+        mask = mask.type(torch.cuda.FloatTensor)
+        #print(ip_without_diag.type)
+        #print(mask.type)
+        ip_without_diag = ip_without_diag*mask
+        exp_pos = torch.exp(pos)
+        #exp_den = torch.exp(torch.max(ip_without_diag,0)[0])
+        exp_den = torch.exp(torch.sum(ip_without_diag,0)/torch.sum(mask,0))
+        loss = - torch.log(exp_pos / exp_den) 
     else:
         if inner_product:
             dist_matrix = -2*inner_product_matrix(anchor, positive)
@@ -164,7 +172,7 @@ def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_h
         else: 
             print ('Unknown loss type. Try triplet_margin, softmax or contrastive')
             sys.exit(1)
-    loss = torch.mean(loss)
+    loss = torch.mean(loss) + 1.0*torch.mean(torch.pow(pos,2))
     return loss
 
 
