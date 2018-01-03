@@ -92,7 +92,7 @@ parser.add_argument('--std-image', type=float, default=0.20197947209,
                     help='std of train dataset for normalization')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
+parser.add_argument('--start-epoch', default=1, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--epochs', type=int, default=10, metavar='E',
                     help='number of epochs to train (default: 10)')
@@ -135,6 +135,8 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--no-hinge', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--donor', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--no-mask', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--inner-product', action='store_true', default=False,
@@ -161,10 +163,12 @@ if args.no_mask:
     suffix = suffix + '_nm'
 if args.data_augment:
     suffix = suffix + '_da'
+if args.donor:
+    suffix = suffix + '_do'
 
 triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
 
-dataset_names = ['synthesized_journals_2_train', 'synthesized_journals_2_test']
+dataset_names = [args.training_set, 'synthesized_journals_test_direct', 'synthesized_journals_2_test', 'NC2017_Dev1_Beta4_bg']
 
 TEST_ON_W1BS = False
 # check if path to w1bs dataset testing module exists
@@ -239,8 +243,12 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
             else:
-                n1 = np.random.randint(0, len(indices[c1]) - 1)
-                n2 = np.random.randint(0, len(indices[c1]) - 1)
+                if args.donor:
+                    n1 = 0 
+                    n2 = np.random.randint(1, len(indices[c1]) - 1)
+                else:
+                    n1 = np.random.randint(0, len(indices[c1]) - 1)
+                    n2 = np.random.randint(0, len(indices[c1]) - 1)
                 while n1 == n2:
                     n2 = np.random.randint(0, len(indices[c1]) - 1)
             n3 = np.random.randint(0, len(indices[c2]) - 1)
@@ -378,7 +386,7 @@ def weights_init(m):
 def create_loaders(load_random_triplets = False):
 
     test_dataset_names = copy.copy(dataset_names)
-    test_dataset_names.remove(args.training_set)
+    #test_dataset_names.remove(args.training_set)
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
@@ -556,6 +564,8 @@ def main(train_loader, test_loaders, model, logger, file_logger):
             
     start = args.start_epoch
     end = start + args.epochs
+    for test_loader in test_loaders:
+        test(test_loader['dataloader'], model, 0, logger, test_loader['name'])
     for epoch in range(start, end):
         # iterate over test loaders and test results
         train(train_loader, model, optimizer1, epoch, logger, triplet_flag)
