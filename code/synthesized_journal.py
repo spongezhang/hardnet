@@ -24,7 +24,7 @@ class synthesized_journal(data.Dataset):
 
     """
     def __init__(self, root, name, train=True, transform=None, download=False):
-        self.image_dir = '/dvmm-filer2/users/xuzhang/Medifor/data/all_journal/data/' 
+        self.image_dir = '../datasets/original/' 
         self.root = os.path.expanduser(root)
         self.name = name
         self.data_dir = os.path.join(self.image_dir, name)
@@ -43,7 +43,7 @@ class synthesized_journal(data.Dataset):
                                ' You can use download=True to download it')
 
         # load the serialized data
-        self.data, self.labels, self.matches = torch.load(self.data_file)
+        self.data, self.labels, self.matches, self.pc_pairs = torch.load(self.data_file)
         #print(type(self.data))
         print(self.data.shape)
         print('max_label: {}'.format(self.labels.max()))
@@ -90,7 +90,8 @@ class synthesized_journal(data.Dataset):
         dataset = (
             read_image_file(self.image_dir, self.name),
             read_info_file(self.image_dir, self.name),
-            read_matches_files(self.image_dir, self.name)
+            read_matches_files(self.image_dir, self.name),
+            read_parent_child_files(self.image_dir, self.name)
         )
 
         with open(self.data_file, 'wb') as f:
@@ -112,7 +113,6 @@ def read_info_file(data_dir, dataset_name):
     labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
     return torch.LongTensor(labels)
 
-
 def read_matches_files(data_dir, dataset_name):
     """Return a Tensor containing the ground truth matches
        Read the file and keep only 3D point ID.
@@ -120,16 +120,34 @@ def read_matches_files(data_dir, dataset_name):
     """
     matches = []
     try:
-        os.stat(data_dir, dataset_name + '_match.txt')
+        os.stat(data_dir + dataset_name + '_match.txt')
     except:
         labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
-        generate_matches_one_by_one(labels, data_dir, dataset_name, 100000)
+        generate_matches_one_by_one(labels, data_dir, dataset_name, 50000)
 
     with open(os.path.join(data_dir, dataset_name + '_match.txt'), 'r') as f:
         for line in f:
             l = line.split()
             matches.append([int(l[0]), int(l[2]), int(l[1] == l[3])])
     return torch.LongTensor(matches)
+
+def read_parent_child_files(data_dir, dataset_name):
+    """Return a Tensor containing the ground truth matches
+       Read the file and keep only 3D point ID.
+       Matches are represented with a 1, non matches with a 0.
+    """
+    pairs = []
+    try:
+        os.stat(data_dir + dataset_name + '_pc.txt')
+    except:
+        labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
+        generate_pairs(labels, data_dir, dataset_name, 50000)
+
+    with open(os.path.join(data_dir, dataset_name + '_pc.txt'), 'r') as f:
+        for line in f:
+            l = line.split()
+            pairs.append([int(l[0]), int(l[2]), int(l[0] < l[2])])
+    return torch.LongTensor(pairs)
 
 def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
     # group labels in order to have O(1) search
@@ -141,15 +159,16 @@ def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
     labels_size = len(labels) - 1
     
     # generate the matches
-    pbar = tqdm(xrange(len(count)))
+    pbar = tqdm(xrange(n_samples))
 
     match_file = os.path.join(base_dir, dataset_name+'_match.txt')
     f = open(match_file, 'w')
     
     for x in pbar:
-        pbar.set_description('Generating triplets')
-        num_samples = count[labels[x]]
-        begin_positives = indices[labels[x]]
+        label_ind = random.randint(0,labels_size)
+        pbar.set_description('Generating matches')
+        num_samples = count[labels[label_ind]]
+        begin_positives = indices[labels[label_ind]]
 
         #offset_a, offset_p = random.sample(xrange(num_samples), 2)
         offset_a = 0
@@ -164,7 +183,39 @@ def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
             idx_n = random.randint(0, labels_size)
         f.write('{:d} {:d} {:d} {:d}\n'.format(idx_p, labels[idx_p], idx_a, labels[idx_a]))
         f.write('{:d} {:d} {:d} {:d}\n'.format(idx_p, labels[idx_p], idx_n, labels[idx_n]))
+
     f.close()
+
+def generate_pairs(labels, base_dir, dataset_name, n_samples):
+    # group labels in order to have O(1) search
+    count = collections.Counter(labels)
+    # index the labels in order to have O(1) search
+    indices = create_indices(labels)
+
+    # range for the sampling
+    labels_size = len(labels) - 1
+    
+    # generate the matches
+    pbar = tqdm(xrange(n_samples))
+
+    match_file = os.path.join(base_dir, dataset_name+'_pc.txt')
+    f = open(match_file, 'w')
+    
+    for x in pbar:
+        label_ind = random.randint(0,labels_size)
+        pbar.set_description('Generating pairs')
+        num_samples = count[labels[label_ind]]
+        begin_positives = indices[labels[label_ind]]
+
+        offset_a, offset_p = random.sample(xrange(num_samples), 2)
+            
+        idx_a = begin_positives + 0#offset_a
+        idx_p = begin_positives + num_samples - 1 #offset_p
+
+        f.write('{:d} {:d} {:d} {:d}\n'.format(idx_a, labels[idx_a], idx_p, labels[idx_p]))
+        f.write('{:d} {:d} {:d} {:d}\n'.format(idx_p, labels[idx_p], idx_a, labels[idx_a]))
+    f.close()
+
 
 def create_indices(labels):
     old = labels[0]

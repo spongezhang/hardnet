@@ -37,18 +37,18 @@ class cd:
         os.chdir(self.savedPath)
 
 gpu_set = ['0']
-parameter_set = [' --donor --data_augment ']
+parameter_set = [' --donor ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-datasets = ['synthesized_journals_2_train', 'synthesized_journals_2_old_train', 'synthesized_journals_train']
+datasets = ['synthesized_journals_2_old_train']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python HardNet_provenance.py --training-set {} --fliprot=False --n-triplets=1000000 --batch-size=128 --epochs 10 --gor=False {} --w1bsroot=None --gpu-id {} --log-dir ../provenance_log/ --enable-logging=True --batch-reduce=min '\
+        command = 'python Genealogy_classification.py --training-set {} --fliprot=False --n-pairs=1000000 --batch-size=128 --epochs 20 {}  --gpu-id {} --log-dir ../genealogy_log/ --enable-logging=True --batch-reduce=min '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)
