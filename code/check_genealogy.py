@@ -36,13 +36,13 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0']
-parameter_set = [' ']
+gpu_set = ['0', '1']
+parameter_set = [' ', '--png']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
 #datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg_png']
+datasets = ['NC2017_Dev2_Beta1_bg']
 process_set = []
 
 

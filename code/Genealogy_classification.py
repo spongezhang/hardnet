@@ -115,6 +115,8 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--data_augment', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--png', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
@@ -125,6 +127,13 @@ parser.add_argument('--donor', action='store_true', default=False,
                     help='enables CUDA training')
 
 args = parser.parse_args()
+dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
+
+if args.png:
+    args.training_set = args.training_set + '_png'
+    for ind in range(len(dataset_names)):
+        dataset_names[ind] = dataset_names[ind] + '_png'
+print(dataset_names)
 
 suffix = '{}'.format(args.training_set)
 
@@ -136,7 +145,6 @@ if args.data_augment:
 if args.donor:
     suffix = suffix + '_do'
 
-dataset_names = ['NC2017_Dev1_Beta4_bg_png', 'NC2017_Dev2_Beta1_bg_png'] #
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -203,16 +211,16 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
             else:
                 if args.donor:
                     n1 = 0 
-                    n2 = np.random.randint(1, len(indices[c1]) - 1)
+                    n2 = np.random.randint(1, len(indices[c1]))
                     tmp_label = np.random.randint(0, 2)
                     if tmp_label<1: 
                         n1 = n2
                         n2 = 0
                 else:
-                    n1 = np.random.randint(0, len(indices[c1]) - 1)
-                    n2 = np.random.randint(0, len(indices[c1]) - 1)
+                    n1 = np.random.randint(0, len(indices[c1]))
+                    n2 = np.random.randint(0, len(indices[c1]))
                 while n1 == n2:
-                    n2 = np.random.randint(0, len(indices[c1]) - 1)
+                    n2 = np.random.randint(0, len(indices[c1]))
 
             tmp_label = np.random.randint(0, 2)
             if n1 > n2:
