@@ -123,9 +123,9 @@ def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_h
         dist_without_min_on_diag = dist_matrix+eye*10
         if not no_mask:
             if inner_product:
-                mask = (dist_without_min_on_diag.ge(-1.95)-1)*-1
+                mask = (dist_without_min_on_diag.ge(-1.95)-1.0)*(-1.0)
             else:
-                mask = (dist_without_min_on_diag.ge(0.008)-1)*-1
+                mask = (dist_without_min_on_diag.ge(0.008)-1.0)*(-1.0)
             mask = mask.type_as(dist_without_min_on_diag)*10
             dist_without_min_on_diag = dist_without_min_on_diag+mask
 

@@ -168,7 +168,7 @@ if args.donor:
 
 triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
 
-dataset_names = [args.training_set, 'synthesized_journals_test_direct', 'synthesized_journals_2_test', 'NC2017_Dev1_Beta4_bg']
+dataset_names = [args.training_set, 'synthesized_journals_test_direct', 'NC2017_Dev1_Beta4_bg']
 
 TEST_ON_W1BS = False
 # check if path to w1bs dataset testing module exists
@@ -386,7 +386,7 @@ def weights_init(m):
 def create_loaders(load_random_triplets = False):
 
     test_dataset_names = copy.copy(dataset_names)
-    #test_dataset_names.remove(args.training_set)
+    test_dataset_names.remove(args.training_set)
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 

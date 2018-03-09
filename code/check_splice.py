@@ -41,15 +41,14 @@ parameter_set = [' ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-#datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg_png']
+datasets = ['synthesized_journals_train']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python Genealogy_classification.py --training-set {} --fliprot=False --n-pairs=1000000 --data_augment --donor --batch-size=128 --epochs 20 {}  --gpu-id {} --log-dir ../genealogy_log/ --enable-logging=True --batch-reduce=min '\
+        command = 'python splice_classification.py --training-set {} --fliprot=False --n-pairs=100000 --data_augment --batch-size=128 --epochs 20 {}  --gpu-id {} --log-dir ../genealogy_log/ --enable-logging=True --batch-reduce=min '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)

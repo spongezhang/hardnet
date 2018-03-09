@@ -31,7 +31,7 @@ import numpy as np
 import random
 import cv2
 import copy
-import genealogy_journal
+import genealogy_journal_2
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_HardNet, loss_random_sampling, loss_L2Net, global_orthogonal_regularization
 from Utils import L2Norm, cv2_scale, np_reshape_color, centerCrop
@@ -136,7 +136,7 @@ if args.data_augment:
 if args.donor:
     suffix = suffix + '_do'
 
-dataset_names = ['NC2017_Dev1_Beta4_bg_png', 'NC2017_Dev2_Beta1_bg_png'] #
+dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -156,7 +156,7 @@ if not os.path.exists(args.log_dir):
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-class PairPhotoTour(genealogy_journal.genealogy_journal):
+class PairPhotoTour(genealogy_journal_2.genealogy_journal_2):
     """
     From the PhotoTour Dataset it generates triplet samples
     note: a triplet is composed by a pair of matching images and one of
@@ -169,65 +169,6 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
         self.n_pairs = args.n_pairs
         self.batch_size = batch_size
 
-        if self.train:
-            print('Generating {} pairs'.format(self.n_pairs))
-            self.pairs, self.label = self.generate_pairs(self.labels, self.n_pairs)
-
-    @staticmethod
-    def generate_pairs(labels, num_pairs):
-        def create_indices(_labels):
-            inds = dict()
-            for idx, ind in enumerate(_labels):
-                if ind not in inds:
-                    inds[ind] = []
-                inds[ind].append(idx)
-            return inds
-
-        pairs = []
-        label = []
-        indices = create_indices(labels)
-        unique_labels = np.unique(labels.numpy())
-        n_classes = unique_labels.shape[0]
-        # add only unique indices in batch
-        already_idxs = set()
-
-        for x in tqdm(range(num_pairs)):
-            if len(already_idxs) >= args.batch_size:
-                already_idxs = set()
-            c1 = np.random.randint(0, n_classes - 1)
-            while c1 in already_idxs:
-                c1 = np.random.randint(0, n_classes - 1)
-            already_idxs.add(c1)
-            if len(indices[c1]) == 2:  # hack to speed up process
-                n1, n2 = 0, 1
-            else:
-                if args.donor:
-                    n1 = 0 
-                    n2 = np.random.randint(1, len(indices[c1]) - 1)
-                    tmp_label = np.random.randint(0, 2)
-                    if tmp_label<1: 
-                        n1 = n2
-                        n2 = 0
-                else:
-                    n1 = np.random.randint(0, len(indices[c1]) - 1)
-                    n2 = np.random.randint(0, len(indices[c1]) - 1)
-                while n1 == n2:
-                    n2 = np.random.randint(0, len(indices[c1]) - 1)
-
-            tmp_label = np.random.randint(0, 2)
-            if n1 > n2:
-                tmp_swap = n1
-                n1 = n2
-                n2 = tmp_swap
-            if tmp_label<1: 
-                tmp_swap = n1
-                n1 = n2
-                n2 = tmp_swap
-            #tmp_label = 1 if n1<n2 else 0 
-            pairs.append([indices[c1][n1], indices[c1][n2]])
-            label.append(tmp_label)
-        return torch.LongTensor(np.array(pairs)), torch.LongTensor(np.array(label))
-
     def __getitem__(self, index):
         def transform_img(img):
             if self.transform is not None:
@@ -235,17 +176,16 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
             return img
 
         if not self.train:
-            m = self.pc_pairs[index]
-            img1 = transform_img(self.data[m[0]])
-            img2 = transform_img(self.data[m[1]])
+            img1 = transform_img(self.data[index*2])
+            img2 = transform_img(self.data[index*2+1])
             img1 = deepcopy(img1.numpy()[:,7:39,7:39])
             img2 = deepcopy(img2.numpy()[:,7:39,7:39])
             img_pair = torch.from_numpy(np.concatenate((img1,img2), axis = 2))
-            return img_pair, m[2]
+            label = int(self.image_index[index*2]>self.image_index[index*2+1])
+            return img_pair, label
         
-        t = self.pairs[index]
-        label = self.label[index]
-        a, p = self.data[t[0]], self.data[t[1]]
+        label = int(self.image_index[index*2]>self.image_index[index*2+1])
+        a, p = self.data[index*2], self.data[index*2+1]
         
         img_a = transform_img(a)
         img_p = transform_img(p)
@@ -277,10 +217,7 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
         return (img_pair, label)
 
     def __len__(self):
-        if self.train:
-            return self.pairs.size(0)
-        else:
-            return self.matches.size(0)
+        return self.index_list.size(0)/2
 
 class HardNet(nn.Module):
     """HardNet model definition
@@ -435,7 +372,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         labels.append(ll)
         predicts.append(pred)
 
-    num_tests = test_loader.dataset.matches.size(0)
+    num_tests = int(test_loader.dataset.image_index.size(0)/2)
     labels = np.vstack(labels).reshape(num_tests)
     predicts = np.vstack(predicts).reshape(num_tests)
 
