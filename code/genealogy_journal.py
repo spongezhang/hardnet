@@ -171,9 +171,6 @@ def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
     # index the labels in order to have O(1) search
     indices = create_indices(labels)
 
-    # range for the sampling
-    labels_size = len(labels) - 1
-    
     # generate the matches
     pbar = tqdm(xrange(n_samples))
 
@@ -181,7 +178,7 @@ def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
     f = open(match_file, 'w')
     
     for x in pbar:
-        label_ind = random.randint(0,labels_size)
+        label_ind = random.randint(0,len(labels))
         pbar.set_description('Generating matches')
         num_samples = count[labels[label_ind]]
         begin_positives = indices[labels[label_ind]]
@@ -193,10 +190,10 @@ def generate_matches_one_by_one(labels, base_dir, dataset_name, n_samples):
         idx_a = begin_positives + offset_a
         idx_p = begin_positives + offset_p
 
-        idx_n = random.randint(0, labels_size)
+        idx_n = random.randint(0, len(labels))
         while labels[idx_n] == labels[idx_a] and \
                         labels[idx_n] == labels[idx_p]:
-            idx_n = random.randint(0, labels_size)
+            idx_n = random.randint(0, len(labels))
         f.write('{:d} {:d} {:d} {:d}\n'.format(idx_p, labels[idx_p], idx_a, labels[idx_a]))
         f.write('{:d} {:d} {:d} {:d}\n'.format(idx_p, labels[idx_p], idx_n, labels[idx_n]))
 
@@ -208,9 +205,6 @@ def generate_pairs(labels, base_dir, dataset_name, n_samples):
     # index the labels in order to have O(1) search
     indices = create_indices(labels)
 
-    # range for the sampling
-    labels_size = len(labels) - 1
-    
     # generate the matches
     pbar = tqdm(xrange(n_samples))
 
@@ -218,14 +212,14 @@ def generate_pairs(labels, base_dir, dataset_name, n_samples):
     f = open(match_file, 'w')
     
     for x in pbar:
-        label_ind = random.randint(0,labels_size)
+        label_ind = random.randint(0,len(labels))
         pbar.set_description('Generating pairs')
         num_samples = count[labels[label_ind]]
         begin_positives = indices[labels[label_ind]]
 
         #offset_a, offset_p = random.sample(xrange(num_samples), 2)
         offset_a = 0
-        offset_p = num_samples - 1
+        offset_p = random.randint(1,num_samples)#num_samples - 1
             
         idx_a = begin_positives + offset_a
         idx_p = begin_positives + offset_p

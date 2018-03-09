@@ -202,9 +202,9 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
         for x in tqdm(range(num_pairs)):
             if len(already_idxs) >= args.batch_size:
                 already_idxs = set()
-            c1 = np.random.randint(0, n_classes - 1)
+            c1 = np.random.randint(0, n_classes)
             while c1 in already_idxs:
-                c1 = np.random.randint(0, n_classes - 1)
+                c1 = np.random.randint(0, n_classes)
             already_idxs.add(c1)
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
