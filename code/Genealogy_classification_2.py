@@ -64,7 +64,7 @@ parser.add_argument('--enable-logging',type=bool, default=False,
                     help='output to tensorlogger')
 parser.add_argument('--log-dir', default='../genealogy_log/',
                     help='folder to output log')
-parser.add_argument('--model-dir', default='../genealogy_model/',
+parser.add_argument('--model-dir', default='../genealogy_2_model/',
                     help='folder to output model checkpoints')
 parser.add_argument('--training-set', default= 'synthesized_journals_2_train',
                     help='Other options: notredame, yosemite')
@@ -100,7 +100,7 @@ parser.add_argument('--alpha', type=float, default=1.0, metavar='ALPHA',
                     help='gor parameter')
 parser.add_argument('--act-decay', type=float, default=0,
                     help='activity L2 decay, default 0')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                     help='learning rate (default: 0.1)')
 parser.add_argument('--fliprot', type=str2bool, default=False,
                     help='turns on flip and 90deg rotation augmentation')
@@ -135,6 +135,8 @@ if args.data_augment:
     suffix = suffix + '_da'
 if args.donor:
     suffix = suffix + '_do'
+
+args.resume = '../genealogy_model/{}/checkpoint_2.pth'.format(suffix)
 
 dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
 
@@ -176,17 +178,25 @@ class PairPhotoTour(genealogy_journal_2.genealogy_journal_2):
             return img
 
         if not self.train:
-            img1 = transform_img(self.data[index*2])
-            img2 = transform_img(self.data[index*2+1])
+            label = np.random.randint(0,2)#int(self.image_index[index*2]>self.image_index[index*2+1])
+            if label == 1:
+                img1 = transform_img(self.data[index*2])
+                img2 = transform_img(self.data[index*2+1])
+            else:
+                img1 = transform_img(self.data[index*2+1])
+                img2 = transform_img(self.data[index*2])
             img1 = deepcopy(img1.numpy()[:,7:39,7:39])
             img2 = deepcopy(img2.numpy()[:,7:39,7:39])
             img_pair = torch.from_numpy(np.concatenate((img1,img2), axis = 2))
-            label = int(self.image_index[index*2]>self.image_index[index*2+1])
+            #label = int(self.image_index[index*2]<self.image_index[index*2+1])
             return img_pair, label
         
-        label = int(self.image_index[index*2]>self.image_index[index*2+1])
-        a, p = self.data[index*2], self.data[index*2+1]
-        
+        label = np.random.randint(0,2)#int(self.image_index[index*2]>self.image_index[index*2+1])
+        if label == 1:
+            a, p = self.data[index*2], self.data[index*2+1]
+        else:
+            a, p = self.data[index*2+1], self.data[index*2]
+
         img_a = transform_img(a)
         img_p = transform_img(p)
 
@@ -243,10 +253,10 @@ class HardNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1, bias = False),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=(8,16), bias = False),
+            nn.Conv2d(128, 128, kernel_size=(8,16)),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Conv2d(128, 2, kernel_size=(1,1), bias = False)
+            nn.Conv2d(128, 2, kernel_size=(1,1))
         )
         self.features.apply(weights_init)
         return
@@ -305,7 +315,7 @@ def create_loaders():
                              download=True,
                              transform=transform),
                              batch_size=args.batch_size,
-                             shuffle=False, **kwargs)
+                             shuffle=True, **kwargs)
 
     test_loaders = [{'name': name,
                      'dataloader': torch.utils.data.DataLoader(
@@ -348,7 +358,8 @@ def train(train_loader, model, optimizer, criterion,  epoch, logger):
     except:
         os.makedirs('{}{}'.format(args.model_dir,suffix))
 
-    torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
+    if (epoch+1)%1 == 0:
+        torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
 
 def test(test_loader, model, epoch, logger, logger_test_name):
@@ -438,8 +449,9 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     for epoch in range(start, end):
         # iterate over test loaders and test results
         train(train_loader, model, optimizer1, criterion, epoch, logger)
-        for test_loader in test_loaders:
-            test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        if (epoch+1)%1 == 0:
+            for test_loader in test_loaders:
+                test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
         
 if __name__ == '__main__':
     LOG_DIR = args.log_dir

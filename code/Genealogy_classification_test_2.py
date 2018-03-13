@@ -39,6 +39,7 @@ from Utils import str2bool
 import torch.nn as nn
 import torch.nn.functional as F
 import pdb
+import collections
 
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
@@ -138,7 +139,7 @@ if args.donor:
 
 args.resume = '{}{}/checkpoint_17.pth'.format(args.model_dir,suffix)
 
-dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
+dataset_names = ['NC2017_Dev1_Beta4_bg'] #, 'NC2017_Dev2_Beta1_bg'
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -332,51 +333,86 @@ def test(test_loader, model):
         pred = pred.data.cpu().numpy().reshape(-1, 1)
         labels.append(ll)
         predicts.append(pred)
-
+    
     num_tests = int(test_loader.dataset.image_index.size(0)/2)
     labels = np.vstack(labels).reshape(num_tests)
     predicts = np.vstack(predicts).reshape(num_tests)
+
+    num_trial = np.max(test_loader.dataset.trial_index.numpy())+1
+    trial_count = collections.Counter(test_loader.dataset.trial_index.numpy())
+
+    journal_trial_dict = {} 
+    right_count = 0
+    total_number = 0
+    for i in range(num_trial):
+        num_samples = int(trial_count[i]/2)
+        start_point = int(test_loader.dataset.trial_fast_access[i])
+
+        journal_id = test_loader.dataset.journal_index[start_point]
+        inx_str = '{}'.format(journal_id)
+        try:
+            journal_trial_dict[inx_str] += 1
+        except:
+            journal_trial_dict[inx_str] = 1
+
+        real_label = int(test_loader.dataset.image_index[start_point]<test_loader.dataset.image_index[start_point+1])
+
+        all_one = np.sum(predicts[int(start_point/2):(int(start_point/2)+num_samples)])
+        final_predict = int(all_one/float(num_samples)>0.5)
+        if final_predict == real_label:
+            right_count = right_count+1
+
+    total_num_dict = {}
+    correct_num_dict = {}
+    acc_dict = {}
+    for ind, label in enumerate(labels):
+        index_0 = test_loader.dataset.image_index[ind*2]
+        index_1 = test_loader.dataset.image_index[ind*2+1]
+        inx_str = '{}_{}'.format(index_0,index_1)
+        try:
+            total_num_dict[inx_str] += 1
+        except:
+            total_num_dict[inx_str] = 1
+            correct_num_dict[inx_str] = 0
+        if label == predicts[ind]:
+            correct_num_dict[inx_str] +=1
+
+    for k,v in total_num_dict.items():
+        #if v>100:
+        acc_dict[k] = correct_num_dict[k]/float(v)
+        sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
+    sys.stdout.flush()
+    print('')
+
+    total_num_dict = {}
+    correct_num_dict = {}
+    acc_dict = {}
+    for ind, label in enumerate(labels):
+        journal_id = test_loader.dataset.journal_index[ind*2]
+        inx_str = '{}'.format(journal_id)
+        try:
+            total_num_dict[inx_str] += 1
+        except:
+            total_num_dict[inx_str] = 1
+            correct_num_dict[inx_str] = 0
+        if label == predicts[ind]:
+            correct_num_dict[inx_str] +=1
+
+    for k,v in total_num_dict.items():
+        acc_dict[k] = correct_num_dict[k]/float(v)
+        #print('Journal: {}, nTrial: {}, Acc: {:.2f} '.format(k, journal_trial_dict[k], correct_num_dict[k]/float(v)))
+
+    print('Trial Acc: {:.2f}'.format(right_count/num_trial))
 
     acc = np.sum(labels == predicts)/float(num_tests)
     print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
     return
 
-def adjust_learning_rate(optimizer):
-    """Updates the learning rate given the learning rate decay.
-    The routine has been implemented according to the original Lua SGD optimizer
-    """
-    for group in optimizer.param_groups:
-        if 'step' not in group:
-            group['step'] = 0.
-        else:
-            group['step'] += 1.
-        group['lr'] = args.lr
-        #group['lr'] = args.lr * (1.0 - float(group['step']) * \
-        #        float(args.batch_size)/(args.n_pairs * float(args.epochs)))
-    return
-
-def create_optimizer(model, new_lr):
-    # setup optimizer
-    if args.optimizer == 'sgd':
-        optimizer = optim.SGD(model.parameters(), lr=new_lr,
-                              momentum=0.9, dampening=0.9,
-                              weight_decay=args.wd)
-    elif args.optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=new_lr,
-                               weight_decay=args.wd)
-    else:
-        raise Exception('Not supported optimizer: {0}'.format(args.optimizer))
-    return optimizer
-
 
 def main(test_loaders, model):
     print('\nparsed options:\n{}\n'.format(vars(args)))
-
-    optimizer1 = create_optimizer(model.features, args.lr)
-    criterion = nn.CrossEntropyLoss()
     if args.cuda:
         model.cuda()
-        criterion.cuda()
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -389,8 +425,6 @@ def main(test_loaders, model):
         else:
             print('=> no checkpoint found at {}'.format(args.resume))
             
-    start = args.start_epoch
-    end = start + args.epochs
     for test_loader in test_loaders:
         test(test_loader['dataloader'], model)
         

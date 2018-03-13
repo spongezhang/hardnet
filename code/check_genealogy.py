@@ -36,8 +36,8 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0', '1']
-parameter_set = [' ', '--png']
+gpu_set = ['0']
+parameter_set = [' ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']

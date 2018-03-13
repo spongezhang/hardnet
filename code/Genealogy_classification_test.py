@@ -140,7 +140,7 @@ if args.donor:
 
 args.resume = '{}{}/checkpoint_17.pth'.format(args.model_dir,suffix)
 
-dataset_names = [ 'NC2017_Dev2_Beta1_bg', 'NC2017_Dev1_Beta4_bg']
+dataset_names = [ 'NC2017_Dev1_Beta4_bg']# 'NC2017_Dev2_Beta1_bg',
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -409,6 +409,7 @@ def test(test_loader, model):
         index_0 = test_loader.dataset.image_index[match[0]]
         index_1 = test_loader.dataset.image_index[match[1]]
         inx_str = '{}_{}'.format(index_0,index_1)
+        journal_id = test_loader.dataset.journal_index[match[0]]
         try:
             total_num_dict[inx_str] += 1
         except:
@@ -418,13 +419,33 @@ def test(test_loader, model):
             correct_num_dict[inx_str] +=1
 
     for k,v in total_num_dict.items():
-        if v>100:
-            acc_dict[k] = correct_num_dict[k]/float(v)
-            sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
-    sys.stdout.flush()
+        print('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
+        #if v>100:
+        #acc_dict[k] = correct_num_dict[k]/float(v)
+        #sys.stdout.write('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
+
+    print('')
+    total_num_dict = {}
+    correct_num_dict = {}
+    acc_dict = {}
+    for ind, label in enumerate(labels):
+        match = test_loader.dataset.pc_pairs[ind]
+        journal_id = test_loader.dataset.journal_index[match[0]]
+        inx_str = '{}'.format(journal_id)
+        try:
+            total_num_dict[inx_str] += 1
+        except:
+            total_num_dict[inx_str] = 1
+            correct_num_dict[inx_str] = 0
+        if label == predicts[ind]:
+            correct_num_dict[inx_str] +=1
+
+    for k,v in total_num_dict.items():
+        #if v>100:
+        acc_dict[k] = correct_num_dict[k]/float(v)
+        #print('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
     #print(total_num_dict)
     #print(correct_num_dict)
-    print('')
 
     return
 

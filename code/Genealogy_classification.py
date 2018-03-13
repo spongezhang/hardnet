@@ -314,10 +314,10 @@ class HardNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1, bias = False),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=(8,16), bias = False),
+            nn.Conv2d(128, 128, kernel_size=(8,16)),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Conv2d(128, 2, kernel_size=(1,1), bias = False)
+            nn.Conv2d(128, 2, kernel_size=(1,1))
         )
         self.features.apply(weights_init)
         return
@@ -376,7 +376,7 @@ def create_loaders():
                              download=True,
                              transform=transform),
                              batch_size=args.batch_size,
-                             shuffle=False, **kwargs)
+                             shuffle=True, **kwargs)
 
     test_loaders = [{'name': name,
                      'dataloader': torch.utils.data.DataLoader(
