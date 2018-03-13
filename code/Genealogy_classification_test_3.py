@@ -31,7 +31,7 @@ import numpy as np
 import random
 import cv2
 import copy
-import genealogy_journal_test
+import genealogy_journal_test_2
 from EvalMetrics import ErrorRateAt95Recall
 from Losses import loss_HardNet, loss_random_sampling, loss_L2Net, global_orthogonal_regularization
 from Utils import L2Norm, cv2_scale, np_reshape_color, centerCrop
@@ -40,6 +40,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 import collections
+import glob
 
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
@@ -139,8 +140,9 @@ if args.donor:
 
 args.resume = '{}{}/checkpoint_17.pth'.format(args.model_dir,suffix)
 
-dataset_names = ['NC2017_Dev1_Beta4_bg'] #, 'NC2017_Dev2_Beta1_bg'
+#dataset_names = ['NC2017_Dev1_Beta4'] #, 'NC2017_Dev2_Beta1_bg'
 
+test_dataset = 'NC2017_Dev1_Beta4'
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -159,7 +161,7 @@ if not os.path.exists(args.log_dir):
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-class PairPhotoTour(genealogy_journal_test.genealogy_journal_test):
+class PairPhotoTour(genealogy_journal_test_2.genealogy_journal_test_2):
     """
     From the PhotoTour Dataset it generates triplet samples
     note: a triplet is composed by a pair of matching images and one of
@@ -231,18 +233,8 @@ class HardNet(nn.Module):
         mp = torch.sum(flat, dim=2) / (32. * 32.)
         sp = torch.std(flat, dim=2) + 1e-7
         return (x - mp.unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(-1).expand_as(x)
-    
-    def forward_2(self, input):
-        x_features = self.features(self.input_norm(input))
-        x = x_features.view(x_features.size(0), -1)
-        return x
 
     def forward(self, input):
-        #flat = input.view(input.size(0), -1)
-        #mp = args.mean-image#torch.sum(flat, dim=1) / (32. * 32.)
-        #sp = args.std-image#torch.std(flat, dim=1) + 1e-7
-        #x_features = self.features(
-            #(input - mp.unsqueeze(-1).unsqueeze(-1).expand_as(input)) / sp.unsqueeze(-1).unsqueeze(1).expand_as(input))
         x_features = self.features(input)
         x = x_features.view(x_features.size(0), -1)
         return x
@@ -250,148 +242,140 @@ class HardNet(nn.Module):
 def weights_init(m):
     if isinstance(m, nn.Conv2d):
         nn.init.orthogonal(m.weight.data, gain=0.7)
-        #nn.init.kaiming_normal(m.weight.data)
         try:
             nn.init.constant(m.bias.data, 0.0)
         except:
             pass
     return
 
-def create_loaders():
-    test_dataset_names = copy.copy(dataset_names)
-    #test_dataset_names.remove(args.training_set)
-
-    kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
-
-    transform = transforms.Compose([
-            #transforms.Lambda(cv2_scale),
-            transforms.Lambda(centerCrop),
-            transforms.Lambda(np_reshape_color),
-            transforms.ToTensor(),
-            transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
-                (args.std_image,args.std_image,args.std_image))])
-
-    test_loaders = [{'name': name,
-                     'dataloader': torch.utils.data.DataLoader(
-             PairPhotoTour(train=False,
-                     batch_size=args.test_batch_size,
-                     root=args.dataroot,
-                     name=name,
-                     download=True,
-                     transform=transform),
-                        batch_size=args.test_batch_size,
-                        shuffle=False, **kwargs)}
-                    for name in test_dataset_names]
-
-    return test_loaders
-
-def test(test_loader, model):
+def test(model):
     # switch to evaluate mode
     model.eval()
 
-    labels, predicts = [], []
+    transform = transforms.Compose([
+        #transforms.Lambda(cv2_scale),
+        transforms.Lambda(centerCrop),
+        transforms.Lambda(np_reshape_color),
+        transforms.ToTensor(),
+        transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
+            (args.std_image,args.std_image,args.std_image))])
 
-    pbar = tqdm(enumerate(test_loader))
-    for batch_idx, (image_pair, label) in pbar:
+    kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
+    for journal in glob.glob(args.dataroot + test_dataset + "/*_patch.dat"):
+        journal = os.path.basename(journal)
+        journal_name = journal.split('_')[0]
+        print(journal_name)
+        test_loader = torch.utils.data.DataLoader(
+                 PairPhotoTour(train=False,
+                         batch_size=args.test_batch_size,
+                         root=args.dataroot,
+                         name=test_dataset,
+                         journal_name = journal_name,
+                         download=True,
+                         transform=transform),
+                            batch_size=args.test_batch_size,
+                            shuffle=False, **kwargs)
 
-        if args.cuda:
-            image_pair = image_pair.cuda()
+        labels, predicts = [], []
+        pbar = tqdm(enumerate(test_loader))
 
-        image_pair, label = Variable(image_pair, volatile=True), Variable(label)
+        for batch_idx, (image_pair, label) in pbar:
+            if args.cuda:
+                image_pair = image_pair.cuda()
 
-        out = model(image_pair)
-        _, pred = torch.max(out,1)
-        ll = label.data.cpu().numpy().reshape(-1, 1)
-        pred = pred.data.cpu().numpy().reshape(-1, 1)
-        labels.append(ll)
-        predicts.append(pred)
-    
-    num_tests = int(test_loader.dataset.image_index.size(0))
-    labels = np.vstack(labels).reshape(num_tests)
-    predicts = np.vstack(predicts).reshape(num_tests)
+            image_pair, label = Variable(image_pair, volatile=True), Variable(label)
 
-    num_trial = np.max(test_loader.dataset.trial_index.numpy())+1
-    trial_count = collections.Counter(test_loader.dataset.trial_index.numpy())
+            out = model(image_pair)
+            _, pred = torch.max(out,1)
+            ll = label.data.cpu().numpy().reshape(-1, 1)
+            pred = pred.data.cpu().numpy().reshape(-1, 1)
+            labels.append(ll)
+            predicts.append(pred)
+        
+        num_tests = int(test_loader.dataset.image_index.size(0))
+        labels = np.vstack(labels).reshape(num_tests)
+        predicts = np.vstack(predicts).reshape(num_tests)
 
-    journal_trial_dict = {} 
-    right_count = 0
-    total_number = 0
-    for i in range(num_trial):
-        num_samples = int(trial_count[i])
-        start_point = int(test_loader.dataset.trial_fast_access[i])
+        num_trial = np.max(test_loader.dataset.trial_index.numpy())+1
+        trial_count = collections.Counter(test_loader.dataset.trial_index.numpy())
 
-        journal_id = test_loader.dataset.journal_index[start_point]
-        inx_str = '{}'.format(journal_id)
-        try:
-            journal_trial_dict[inx_str] += 1
-        except:
-            journal_trial_dict[inx_str] = 1
+        journal_trial_dict = {} 
+        right_count = 0
+        total_number = 0
+        for i in range(num_trial):
+            num_samples = int(trial_count[i])
+            start_point = int(test_loader.dataset.trial_fast_access[i])
 
-        real_label = int(test_loader.dataset.image_index[start_point]<test_loader.dataset.image_index[start_point+1])
-        all_one = np.sum(predicts[int(start_point):(int(start_point)+num_samples):2])
-        final_predict = int(all_one/float(num_samples/2)>0.5)
-        if final_predict == real_label:
-            right_count = right_count+1
+            journal_id = test_loader.dataset.journal_index[start_point]
+            inx_str = '{}'.format(journal_id)
+            try:
+                journal_trial_dict[inx_str] += 1
+            except:
+                journal_trial_dict[inx_str] = 1
 
-        real_label = int(test_loader.dataset.image_index[start_point+1]<test_loader.dataset.image_index[start_point])
-        all_one = np.sum(predicts[int(start_point+1):(int(start_point)+num_samples):2])
-        final_predict = int(all_one/float(num_samples/2)>0.5)
-        if final_predict == real_label:
-            right_count = right_count+1
+            real_label = int(test_loader.dataset.image_index[start_point]<test_loader.dataset.image_index[start_point+1])
+            all_one = np.sum(predicts[int(start_point):(int(start_point)+num_samples):2])
+            final_predict = int(all_one/float(num_samples/2)>0.5)
+            if final_predict == real_label:
+                right_count = right_count+1
 
-    total_num_dict = {}
-    correct_num_dict = {}
-    acc_dict = {}
-    for ind, label in enumerate(labels):
-        if ind%2==0:
-            index_0 = test_loader.dataset.image_index[ind]
-            index_1 = test_loader.dataset.image_index[ind+1]
-        else:
-            index_0 = test_loader.dataset.image_index[ind]
-            index_1 = test_loader.dataset.image_index[ind-1]
+            real_label = int(test_loader.dataset.image_index[start_point+1]<test_loader.dataset.image_index[start_point])
+            all_one = np.sum(predicts[int(start_point+1):(int(start_point)+num_samples):2])
+            final_predict = int(all_one/float(num_samples/2)>0.5)
+            if final_predict == real_label:
+                right_count = right_count+1
 
-        inx_str = '{}_{}'.format(index_0,index_1)
-        try:
-            total_num_dict[inx_str] += 1
-        except:
-            total_num_dict[inx_str] = 1
-            correct_num_dict[inx_str] = 0
-        if label == predicts[ind]:
-            correct_num_dict[inx_str] +=1
+        total_num_dict = {}
+        correct_num_dict = {}
+        acc_dict = {}
+        for ind, label in enumerate(labels):
+            if ind%2==0:
+                index_0 = test_loader.dataset.image_index[ind]
+                index_1 = test_loader.dataset.image_index[ind+1]
+            else:
+                index_0 = test_loader.dataset.image_index[ind]
+                index_1 = test_loader.dataset.image_index[ind-1]
 
-    for k,v in total_num_dict.items():
-        #if v>100:
-        acc_dict[k] = correct_num_dict[k]/float(v)
-        sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
-    sys.stdout.flush()
-    print('')
+            inx_str = '{}_{}'.format(index_0,index_1)
+            try:
+                total_num_dict[inx_str] += 1
+            except:
+                total_num_dict[inx_str] = 1
+                correct_num_dict[inx_str] = 0
+            if label == predicts[ind]:
+                correct_num_dict[inx_str] +=1
 
-    total_num_dict = {}
-    correct_num_dict = {}
-    acc_dict = {}
-    for ind, label in enumerate(labels):
-        journal_id = test_loader.dataset.journal_index[ind]
-        inx_str = '{}'.format(journal_id)
-        try:
-            total_num_dict[inx_str] += 1
-        except:
-            total_num_dict[inx_str] = 1
-            correct_num_dict[inx_str] = 0
-        if label == predicts[ind]:
-            correct_num_dict[inx_str] +=1
+        for k,v in total_num_dict.items():
+            acc_dict[k] = correct_num_dict[k]/float(v)
+            sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
+        sys.stdout.flush()
+        print('')
 
-    for k,v in total_num_dict.items():
-        acc_dict[k] = correct_num_dict[k]/float(v)
-        #print('Journal: {}, nTrial: {}, Acc: {:.2f} '.format(k, journal_trial_dict[k], correct_num_dict[k]/float(v)))
+        total_num_dict = {}
+        correct_num_dict = {}
+        acc_dict = {}
+        for ind, label in enumerate(labels):
+            journal_id = test_loader.dataset.journal_index[ind]
+            inx_str = '{}'.format(journal_id)
+            try:
+                total_num_dict[inx_str] += 1
+            except:
+                total_num_dict[inx_str] = 1
+                correct_num_dict[inx_str] = 0
+            if label == predicts[ind]:
+                correct_num_dict[inx_str] +=1
 
-    print('Trial Acc: {:.2f}'.format(right_count/float(num_trial*2)))
+        for k,v in total_num_dict.items():
+            acc_dict[k] = correct_num_dict[k]/float(v)
 
-    acc = np.sum(labels == predicts)/float(num_tests)
-    print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
+        print('Trial Acc: {:.2f}'.format(right_count/float(num_trial*2)))
+
+        acc = np.sum(labels == predicts)/float(num_tests)
+        print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
     return
 
 
-def main(test_loaders, model):
+def main(model):
     print('\nparsed options:\n{}\n'.format(vars(args)))
     if args.cuda:
         model.cuda()
@@ -407,10 +391,8 @@ def main(test_loaders, model):
         else:
             print('=> no checkpoint found at {}'.format(args.resume))
             
-    for test_loader in test_loaders:
-        test(test_loader['dataloader'], model)
+    test(model)
         
 if __name__ == '__main__':
     model = HardNet()
-    test_loaders = create_loaders()
-    main(test_loaders, model)
+    main(model)
