@@ -136,7 +136,8 @@ if args.data_augment:
 if args.donor:
     suffix = suffix + '_do'
 
-dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1', 'synthesized_journals_train','synthesized_journals_test'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg'
+#dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg'
+dataset_names = ['synthesized_journals_train', 'synthesized_journals_test', 'NC2017_Dev2_Beta1', 'NC2017_Dev1_Beta4'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg'
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -230,10 +231,10 @@ class HardNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1, bias = False),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=(8,8), bias = False),
+            nn.Conv2d(128, 128, kernel_size=(8,8)),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Conv2d(128, 2, kernel_size=(1,1), bias = False)
+            nn.Conv2d(128, 2, kernel_size=(1,1))
         )
         self.features.apply(weights_init)
         return
@@ -298,7 +299,7 @@ def create_loaders():
                              download=True,
                              transform=transform),
                              batch_size=args.batch_size,
-                             shuffle=False, **kwargs)
+                             shuffle=True, **kwargs)
 
     test_loaders = [{'name': name,
                      'dataloader': torch.utils.data.DataLoader(
@@ -341,7 +342,8 @@ def train(train_loader, model, optimizer, criterion,  epoch, logger):
     except:
         os.makedirs('{}{}'.format(args.model_dir,suffix))
 
-    torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
+    if ((epoch+1)%10)==0:
+        torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
 
 def test(test_loader, model, epoch, logger, logger_test_name):
@@ -431,8 +433,9 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     for epoch in range(start, end):
         # iterate over test loaders and test results
         train(train_loader, model, optimizer1, criterion, epoch, logger)
-        for test_loader in test_loaders:
-            test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        if ((epoch+1)%10)==0:
+            for test_loader in test_loaders:
+                test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
         
 if __name__ == '__main__':
     LOG_DIR = args.log_dir

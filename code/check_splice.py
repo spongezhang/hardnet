@@ -36,19 +36,20 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0']
+gpu_set = ['0', '1']
 parameter_set = [' ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-datasets = ['synthesized_journals_train']
+datasets = ['synthesized_journals_train', 'NC2017_Dev2_Beta1' ]#'NC2017_Dev2_Beta1'
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python splice_classification.py --training-set {} --fliprot=False --n-pairs=100000 --data_augment --batch-size=128 --epochs 20 {}  --gpu-id {} --log-dir ../genealogy_log/ --enable-logging=True --batch-reduce=min '\
+        command = 'python splice_classification.py --training-set {} --fliprot=False --n-pairs=100000 --data_augment \
+                --batch-size=128 --epochs 200 {}  --gpu-id {} --log-dir ../splice_log/ --enable-logging=True --batch-reduce=min '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)
