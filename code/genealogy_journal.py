@@ -9,7 +9,7 @@ import collections
 from tqdm import tqdm
 import random
 
-#import pdb
+import pdb
 
 class genealogy_journal(data.Dataset):
     """`Learning Local Image Descriptors Data <http://phototour.cs.washington.edu/patches/default.htm>`_ Dataset.
@@ -89,16 +89,43 @@ class genealogy_journal(data.Dataset):
 
         # process and save as torch files
         print('# Caching data {}'.format(self.data_file))
+        dataset_names = self.name.split('+')
 
-        labels, journal_index, image_index = read_info_file(self.image_dir, self.name)
+        all_patches = []
+        all_index = []
+        all_journal_index = []
+        all_image_index = []
+        max_idx = -1
+        for name in dataset_names:
+            labels, journal_index, image_index = read_info_file(self.image_dir, name)
+            labels = np.array(labels)
+            labels = labels+max_idx+1
+            max_idx = np.max(labels)
+            patches = read_image_file(self.image_dir, name)
+            if all_patches == []:
+                all_patches = patches
+            else:
+                all_patches = np.vstack((all_patches,patches))
+            if all_index == []:
+                all_index = labels
+            else:
+                all_index = np.concatenate((all_index,labels),axis = 0)
+            if all_journal_index == []:
+                all_journal_list = journal_index
+            else:
+                all_journal_index = all_journal_index + journal_index
+            if all_image_index == []:
+                all_image_index = image_index
+            else:
+                all_image_index = all_image_index+image_index
 
         dataset = (
-            read_image_file(self.image_dir, self.name),
-            labels, 
-            journal_index, 
-            image_index,
-            read_matches_files(self.image_dir, self.name),
-            read_parent_child_files(self.image_dir, self.name)
+            torch.ByteTensor(np.array(all_patches)),
+            torch.LongTensor(all_index), 
+            torch.LongTensor(all_journal_index), 
+            torch.LongTensor(all_image_index),
+            read_matches_files(self.image_dir, self.name, all_index, all_journal_index, all_image_index),
+            read_parent_child_files(self.image_dir, self.name, all_index, all_journal_index, all_image_index)
         )
 
         with open(self.data_file, 'wb') as f:
@@ -110,7 +137,7 @@ def read_image_file(data_dir, dataset_name):
     #patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
     patches = hickle.load(os.path.join(data_dir, dataset_name+'_genealogy_patch.dat'))
     #print(patches.shape)
-    return torch.ByteTensor(np.array(patches))
+    return patches
 
 
 def read_info_file(data_dir, dataset_name):
@@ -122,12 +149,10 @@ def read_info_file(data_dir, dataset_name):
     #labels = hickle.load(os.path.join(data_dir, dataset_name+'_genealogy_label.dat'))
     labels, journal_index_list, image_index_list =\
             hickle.load(os.path.join(data_dir, dataset_name+'_genealogy_label.dat'))
-    return torch.LongTensor(labels), \
-            torch.LongTensor(np.array(journal_index_list)),\
-            torch.LongTensor(np.array(image_index_list))
+    return labels, journal_index_list, image_index_list
             
 
-def read_matches_files(data_dir, dataset_name):
+def read_matches_files(data_dir, dataset_name, labels, journal_index_list, image_index_list):
     """Return a Tensor containing the ground truth matches
        Read the file and keep only 3D point ID.
        Matches are represented with a 1, non matches with a 0.
@@ -136,8 +161,6 @@ def read_matches_files(data_dir, dataset_name):
     try:
         os.stat(data_dir + dataset_name + '_genealogy_match.txt')
     except:
-        labels, journal_index_list, image_index_list =\
-                hickle.load(os.path.join(data_dir, dataset_name+'_genealogy_label.dat'))
         generate_matches_one_by_one(labels, data_dir, dataset_name, 50000)
 
     with open(os.path.join(data_dir, dataset_name + '_genealogy_match.txt'), 'r') as f:
@@ -146,7 +169,7 @@ def read_matches_files(data_dir, dataset_name):
             matches.append([int(l[0]), int(l[2]), int(l[1] == l[3])])
     return torch.LongTensor(matches)
 
-def read_parent_child_files(data_dir, dataset_name):
+def read_parent_child_files(data_dir, dataset_name, labels, journal_index_list, image_index_list):
     """Return a Tensor containing the ground truth matches
        Read the file and keep only 3D point ID.
        Matches are represented with a 1, non matches with a 0.
@@ -155,8 +178,6 @@ def read_parent_child_files(data_dir, dataset_name):
     try:
         os.stat(data_dir + dataset_name + '_genealogy_pc.txt')
     except:
-        labels, journal_index_list, image_index_list =\
-                hickle.load(os.path.join(data_dir, dataset_name+'_genealogy_label.dat'))
         generate_pairs(labels, data_dir, dataset_name, 50000)
 
     with open(os.path.join(data_dir, dataset_name + '_genealogy_pc.txt'), 'r') as f:

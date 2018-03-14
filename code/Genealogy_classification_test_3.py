@@ -261,6 +261,8 @@ def test(model):
             (args.std_image,args.std_image,args.std_image))])
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
+    good_journal = 0
+    processed_journal = 0
     for journal in glob.glob(args.dataroot + test_dataset + "/*_patch.dat"):
         journal = os.path.basename(journal)
         journal_name = journal.split('_')[0]
@@ -291,7 +293,9 @@ def test(model):
             pred = pred.data.cpu().numpy().reshape(-1, 1)
             labels.append(ll)
             predicts.append(pred)
-        
+        max_image_id = np.max(test_loader.dataset.image_index.numpy())  
+        #provenance_matrix = np.ones((max_image_id+1, max_image_id+1))*0.5
+        provenance_vector = np.zeros((max_image_id+1))
         num_tests = int(test_loader.dataset.image_index.size(0))
         labels = np.vstack(labels).reshape(num_tests)
         predicts = np.vstack(predicts).reshape(num_tests)
@@ -344,34 +348,27 @@ def test(model):
                 correct_num_dict[inx_str] = 0
             if label == predicts[ind]:
                 correct_num_dict[inx_str] +=1
-
+            if predicts[ind]==1:
+                provenance_vector[index_0] += 1
+            else:
+                provenance_vector[index_1] += 1
+        predict_base_index = np.argmax(provenance_vector)
+        if predict_base_index == 0:
+            good_journal += 1
+        processed_journal += 1
         for k,v in total_num_dict.items():
             acc_dict[k] = correct_num_dict[k]/float(v)
             sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
         sys.stdout.flush()
         print('')
 
-        total_num_dict = {}
-        correct_num_dict = {}
-        acc_dict = {}
-        for ind, label in enumerate(labels):
-            journal_id = test_loader.dataset.journal_index[ind]
-            inx_str = '{}'.format(journal_id)
-            try:
-                total_num_dict[inx_str] += 1
-            except:
-                total_num_dict[inx_str] = 1
-                correct_num_dict[inx_str] = 0
-            if label == predicts[ind]:
-                correct_num_dict[inx_str] +=1
-
-        for k,v in total_num_dict.items():
-            acc_dict[k] = correct_num_dict[k]/float(v)
-
+        print('Predicted base: {}'.format(predict_base_index))
         print('Trial Acc: {:.2f}'.format(right_count/float(num_trial*2)))
 
         acc = np.sum(labels == predicts)/float(num_tests)
         print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
+    
+    print('Base Predict Acc: {:.2f}'.format(good_journal/float(processed_journal)))
     return
 
 

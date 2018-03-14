@@ -43,14 +43,14 @@ number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
 #datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg']
+datasets = ['NC2017_Dev2_Beta1_bg+NC2017_Dev2_Beta1_bg_png']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python Genealogy_classification_test_3.py --training-set {} --data_augment {}  --gpu-id {}  --batch-reduce=min '\
+        command = 'python Genealogy_classification_test_3.py --training-set {} --data_augment {} --gpu-id {}  --batch-reduce=min '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)
