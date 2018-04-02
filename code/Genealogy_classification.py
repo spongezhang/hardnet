@@ -117,6 +117,8 @@ parser.add_argument('--data_augment', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--png', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--jpg', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
@@ -133,6 +135,10 @@ if args.png:
     args.training_set = args.training_set + '_png'
     for ind in range(len(dataset_names)):
         dataset_names[ind] = dataset_names[ind] + '_png'
+if args.jpg:
+    args.training_set = args.training_set + '_jpg'
+    for ind in range(len(dataset_names)):
+        dataset_names[ind] = dataset_names[ind] + '_jpg'
 print(dataset_names)
 
 suffix = '{}'.format(args.training_set)
