@@ -9,8 +9,6 @@ import collections
 from tqdm import tqdm
 import random
 
-import pdb
-
 class genealogy_journal(data.Dataset):
     """`Learning Local Image Descriptors Data <http://phototour.cs.washington.edu/patches/default.htm>`_ Dataset.
 
