@@ -36,21 +36,21 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0', '1']
+gpu_set = ['0']
 parameter_set = [' ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-datasets = ['synthesized_journals_train', 'NC2017_Dev2_Beta1' ]#'NC2017_Dev2_Beta1'
+datasets = ['NC2017_Dev2_Beta1']#
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python splice_classification.py --training-set {} --fliprot=False --n-pairs=100000 --data_augment \
+        command = 'python splice_classification.py --training-set {} --fliprot=False --n-pairs=100000 \
                 --batch-size=128 --epochs 200 {}  --gpu-id {} --log-dir ../splice_log/ --enable-logging=True --batch-reduce=min '\
-                .format(dataset, parameter, gpu_set[idx%number_gpu])
+                .format(dataset, parameter, gpu_set[idx%number_gpu])# 
     
         print(command)
         p = subprocess.Popen(shlex.split(command))

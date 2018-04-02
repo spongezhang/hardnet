@@ -40,6 +40,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
+import scipy.fftpack
+from numpy import r_
+
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
         super(CorrelationPenaltyLoss, self).__init__()
@@ -137,7 +140,7 @@ if args.donor:
     suffix = suffix + '_do'
 
 #dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg'
-dataset_names = ['synthesized_journals_train', 'synthesized_journals_test', 'NC2017_Dev2_Beta1', 'NC2017_Dev1_Beta4'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg'
+dataset_names = ['NC2017_Dev2_Beta1', 'NC2017_Dev1_Beta4', 'synthesized_journals_train', 'synthesized_journals_test'] #'synthesized_journals_2_train_bg', ,'synthesized_journals_2_test_bg' 'synthesized_journals_train', 'synthesized_journals_test', 
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -168,6 +171,9 @@ class PairPhotoTour(splice_journal.splice_journal):
         self.transform = transform
         self.train = train
         self.batch_size = batch_size
+    
+    def dct2(self, a):
+        return scipy.fftpack.dct(scipy.fftpack.dct( a, axis=0, norm='ortho' ), axis=1, norm='ortho' )
 
     def __getitem__(self, index):
         def transform_img(img):
@@ -178,8 +184,15 @@ class PairPhotoTour(splice_journal.splice_journal):
         if not self.train:
             img = transform_img(self.data[index])
             label = self.labels[index]
-            img = deepcopy(img.numpy()[:,7:39,7:39])
-            return img, label
+            im = deepcopy(img.numpy()[:,8:40,8:40])
+            imsize = im.shape
+            dct = np.zeros(imsize)
+            # Do 8x8 DCT on image (in-place)
+            for i in r_[:imsize[0]:8]:
+                for j in r_[:imsize[1]:8]:
+                    dct[i:(i+8),j:(j+8)] = self.dct2( im[i:(i+8),j:(j+8)] )
+            dct = dct.astype(np.float32)
+            return dct, label
         
         label = self.labels[index]
         a = self.data[index]
@@ -188,7 +201,14 @@ class PairPhotoTour(splice_journal.splice_journal):
 
         if not args.data_augment:
             #pass
-            img = deepcopy(img.numpy()[:,7:39,7:39])
+            im = deepcopy(img.numpy()[:,8:40,8:40])
+            imsize = im.shape
+            dct = np.zeros(imsize)
+            # Do 8x8 DCT on image (in-place)
+            for i in r_[:imsize[0]:8]:
+                for j in r_[:imsize[1]:8]:
+                    dct[i:(i+8),j:(j+8)] = self.dct2( im[i:(i+8),j:(j+8)] )
+            dct = dct.astype(np.float32)
         else:
             random_x = random.randint(0,8)
             random_y = random.randint(0,8)
@@ -202,7 +222,7 @@ class PairPhotoTour(splice_journal.splice_journal):
                     img = img.permute(0,2,1)
                 if do_flip:
                     img = deepcopy(img.numpy()[:,:,::-1])
-        return (img, label)
+        return (dct, label)
 
     def __len__(self):
         return self.labels.size(0)

@@ -43,7 +43,7 @@ number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
 #datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg+NC2017_Dev2_Beta1_bg_png']
+datasets = ['NC2017_Dev2_Beta1_bg']
 process_set = []
 
 
@@ -64,7 +64,7 @@ for dataset in datasets:
         
             process_set = []
     
-        time.sleep(60)
+        time.sleep(10)
     
     for sub_process in process_set:
         sub_process.wait()

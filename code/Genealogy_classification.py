@@ -448,7 +448,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
     predicts = np.vstack(predicts).reshape(num_tests)
 
     acc = np.sum(labels == predicts)/float(num_tests)
-    print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
+    print('\33[91mEpoch: {}, Test set: Accuracy: {:.8f}\n\33[0m'.format(epoch,acc))
 
     if (args.enable_logging):
         logger.log_value(logger_test_name+' acc', acc)

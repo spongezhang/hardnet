@@ -140,6 +140,8 @@ if args.donor:
 
 args.resume = '{}{}/checkpoint_17.pth'.format(args.model_dir,suffix)
 
+fh = open(suffix + ".txt","w")
+
 #dataset_names = ['NC2017_Dev1_Beta4'] #, 'NC2017_Dev2_Beta1_bg'
 
 test_dataset = 'NC2017_Dev1_Beta4'
@@ -266,6 +268,11 @@ def test(model):
     for journal in glob.glob(args.dataroot + test_dataset + "/*_patch.dat"):
         journal = os.path.basename(journal)
         journal_name = journal.split('_')[0]
+
+        #if journal_name != '475eddd8a10c26d8588c46df364575c7':
+        #    continue
+
+        fh.write('Journal Name: {}\n'.format(journal_name))
         print(journal_name)
         test_loader = torch.utils.data.DataLoader(
                  PairPhotoTour(train=False,
@@ -353,21 +360,26 @@ def test(model):
             else:
                 provenance_vector[index_1] += 1
         predict_base_index = np.argmax(provenance_vector)
-        if predict_base_index == 0:
-            good_journal += 1
         processed_journal += 1
         for k,v in total_num_dict.items():
             acc_dict[k] = correct_num_dict[k]/float(v)
             sys.stdout.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
+            if k[:2] == '0_':
+                fh.write('{}: {:.2f} '.format(k, correct_num_dict[k]/float(v)))
         sys.stdout.flush()
+        fh.write('\n')
         print('')
-
+        fh.write('{}\n'.format(provenance_vector))
+        print(provenance_vector)
+        if predict_base_index == 0:
+            good_journal += 1
+        fh.write('Predicted base: {}\n \n'.format(predict_base_index))
         print('Predicted base: {}'.format(predict_base_index))
         print('Trial Acc: {:.2f}'.format(right_count/float(num_trial*2)))
-
         acc = np.sum(labels == predicts)/float(num_tests)
         print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
-    
+
+    fh.write('Base Predict Acc: {:.2f}\n'.format(good_journal/float(processed_journal)))
     print('Base Predict Acc: {:.2f}'.format(good_journal/float(processed_journal)))
     return
 
@@ -393,3 +405,4 @@ def main(model):
 if __name__ == '__main__':
     model = HardNet()
     main(model)
+    fh.close()
