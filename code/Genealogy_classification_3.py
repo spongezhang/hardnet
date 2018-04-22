@@ -62,9 +62,9 @@ parser.add_argument('--dataroot', type=str,
                     help='path to dataset')
 parser.add_argument('--enable-logging',type=bool, default=False,
                     help='output to tensorlogger')
-parser.add_argument('--log-dir', default='../genealogy_log/',
+parser.add_argument('--log-dir', default='../genealogy_3_log/',
                     help='folder to output log')
-parser.add_argument('--model-dir', default='../genealogy_model/',
+parser.add_argument('--model-dir', default='../genealogy_3_model/',
                     help='folder to output model checkpoints')
 parser.add_argument('--training-set', default= 'synthesized_journals_2_train',
                     help='Other options: notredame, yosemite')
@@ -117,8 +117,6 @@ parser.add_argument('--data_augment', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--png', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--jpg', action='store_true', default=False,
-                    help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
@@ -135,10 +133,6 @@ if args.png:
     args.training_set = args.training_set + '_png'
     for ind in range(len(dataset_names)):
         dataset_names[ind] = dataset_names[ind] + '_png'
-if args.jpg:
-    args.training_set = args.training_set + '_jpg'
-    for ind in range(len(dataset_names)):
-        dataset_names[ind] = dataset_names[ind] + '_jpg'
 print(dataset_names)
 
 suffix = '{}'.format(args.training_set)
@@ -218,10 +212,6 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
                 if args.donor:
                     n1 = 0 
                     n2 = np.random.randint(1, len(indices[c1]))
-                    tmp_label = np.random.randint(0, 2)
-                    if tmp_label<1: 
-                        n1 = n2
-                        n2 = 0
                 else:
                     n1 = np.random.randint(0, len(indices[c1]))
                     n2 = np.random.randint(0, len(indices[c1]))
@@ -454,7 +444,7 @@ def test(test_loader, model, epoch, logger, logger_test_name):
     predicts = np.vstack(predicts).reshape(num_tests)
 
     acc = np.sum(labels == predicts)/float(num_tests)
-    print('\33[91mEpoch: {}, Test set: Accuracy: {:.8f}\n\33[0m'.format(epoch,acc))
+    print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
 
     if (args.enable_logging):
         logger.log_value(logger_test_name+' acc', acc)

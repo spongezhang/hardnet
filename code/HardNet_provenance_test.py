@@ -48,6 +48,8 @@ parser.add_argument('--dataroot', type=str,
                     help='path to dataset')
 parser.add_argument('--model-dir', default='../provenance_model/',
                     help='folder to output model checkpoints')
+parser.add_argument('--suffix', default='synthesized_journals_2_train_min_triplet_margin_as_da_do',
+                    help='folder to output model checkpoints')
 parser.add_argument('--test-set', default= 'MSCOCO_synthesized',
                     help='Other options: notredame, yosemite')
 parser.add_argument('--num-workers', default= 1,
@@ -62,7 +64,7 @@ parser.add_argument('--mean-image', type=float, default=0.443728476019,
                     help='mean of train dataset for normalization')
 parser.add_argument('--std-image', type=float, default=0.20197947209,
                     help='std of train dataset for normalization')
-parser.add_argument('--start-epoch', default=3, type=int, metavar='N',
+parser.add_argument('--start-epoch', default=9, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='BST',
                     help='input batch size for testing (default: 1000)')
@@ -73,11 +75,11 @@ parser.add_argument('--gpu-id', default='0', type=str,
 
 args = parser.parse_args()
 
-suffix = 'synthesized_journals_2_train_min_triplet_margin_as_da_do'
-try: 
+suffix = args.suffix 
+try:
     args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
 except:
-    args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
+    args.resume = '{}{}/checkpoint_12.pth'.format(args.model_dir,suffix)
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -150,8 +152,9 @@ def main(model):
     # print the experiment configuration
     model.eval()
     root_dir = '/home/xuzhang/project/Medifor/data/' + args.test_set + '/'
+    index_dir = '/home/xuzhang/project/Medifor/data/' + args.test_set + '/'
     save_dir = '/home/xuzhang/project/Medifor/code/provenance-filtering/data/' + args.test_set + '/'
-    if 'NC2017' in args.test_set:
+    if 'MFC18' in args.test_set or 'NC2017' in args.test_set:
         ndataset_list = args.test_set.split('_')
         dbindex_name = ndataset_list[0]+'_'+ndataset_list[1]
     else:
@@ -177,11 +180,12 @@ def main(model):
     test_batch_size = args.test_batch_size
     descriptor_dim = 128
     detector_name = 'DOG'
-
+    
+    save_dir = save_dir + '/' + detector_name + '_prov_desc_{}_{}/'.format(args.suffix,subset)
     try:
-        os.stat(save_dir+'/'+detector_name+'_prov_desc_'+subset+'/') 
+        os.stat(save_dir) 
     except:
-        os.makedirs(save_dir + '/' + detector_name + '_prov_desc_' + subset + '/')
+        os.makedirs(save_dir)
 
     if args.resume:
         if os.path.isfile(args.resume):
@@ -196,7 +200,7 @@ def main(model):
     for idx,(filename,fileid) in tqdm(enumerate(zip(world_file_list,world_id_list))):
         meta = np.array([])
         features = np.array([])
-        feature_file = save_dir+'/'+detector_name+'_prov_desc_'+subset+'/'+fileid+'.npz'
+        feature_file = save_dir+fileid+'.npz'
         
         try:
             gray_image, ratio = image_processing.read_image_from_name(root_dir,filename)
@@ -206,6 +210,12 @@ def main(model):
             np.savez(feature_file, meta, features)
         
         kp_list, _ = image_processing.extract_sift(gray_image)
+
+        patch_number = len(kp_list)
+        if patch_number == 0:
+            np.savez(feature_file, meta=meta, features = features)
+            continue
+
         patches_list = []
         
         for kp_idx, kp in enumerate(kp_list):

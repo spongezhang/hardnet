@@ -402,7 +402,7 @@ def weights_init(m):
 def create_loaders(load_random_triplets = False):
 
     test_dataset_names = copy.copy(dataset_names)
-    #test_dataset_names.remove(args.training_set)
+    test_dataset_names.remove(args.training_set)
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 

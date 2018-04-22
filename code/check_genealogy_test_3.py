@@ -17,6 +17,7 @@ import pandas as pd
 import subprocess
 import shlex
 import argparse
+
 ####################################################################
 # Parse command line
 ####################################################################
@@ -36,20 +37,20 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0', '1']
+gpu_set = ['0']
 parameter_set = [' ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
 #datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg --jpg', 'NC2017_Dev2_Beta1_bg+NC2017_Dev2_Beta1_bg_jpg']
+datasets = ['NC2017_Dev2_Beta1_bg']
 process_set = []
 
 
 for dataset in datasets:
     for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python Genealogy_classification.py --training-set {} --fliprot=False --n-pairs=1000000 --data_augment --batch-size=128 --epochs 20 {}  --gpu-id {} --log-dir ../genealogy_log/ --enable-logging=True --batch-reduce=min '\
+        command = 'python Genealogy_classification_test_3.py --training-set {} --data_augment {} --gpu-id {}  --batch-reduce=min '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)
@@ -63,7 +64,7 @@ for dataset in datasets:
         
             process_set = []
     
-        time.sleep(60)
+        time.sleep(10)
     
     for sub_process in process_set:
         sub_process.wait()

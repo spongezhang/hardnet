@@ -40,6 +40,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
+np.set_printoptions(precision=2)
+
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
         super(CorrelationPenaltyLoss, self).__init__()
@@ -115,10 +117,6 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--data_augment', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--png', action='store_true', default=False,
-                    help='enables CUDA training')
-parser.add_argument('--jpg', action='store_true', default=False,
-                    help='enables CUDA training')
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
@@ -129,17 +127,6 @@ parser.add_argument('--donor', action='store_true', default=False,
                     help='enables CUDA training')
 
 args = parser.parse_args()
-dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
-
-if args.png:
-    args.training_set = args.training_set + '_png'
-    for ind in range(len(dataset_names)):
-        dataset_names[ind] = dataset_names[ind] + '_png'
-if args.jpg:
-    args.training_set = args.training_set + '_jpg'
-    for ind in range(len(dataset_names)):
-        dataset_names[ind] = dataset_names[ind] + '_jpg'
-print(dataset_names)
 
 suffix = '{}'.format(args.training_set)
 
@@ -151,6 +138,9 @@ if args.data_augment:
 if args.donor:
     suffix = suffix + '_do'
 
+args.resume = '{}{}/checkpoint_17.pth'.format(args.model_dir,suffix)
+
+dataset_names = [ 'NC2017_Dev1_Beta4_bg']# 'NC2017_Dev2_Beta1_bg',
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
@@ -161,10 +151,6 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if args.cuda:
     cudnn.benchmark = True
     torch.cuda.manual_seed_all(args.seed)
-
-# create loggin directory
-if not os.path.exists(args.log_dir):
-    os.makedirs(args.log_dir)
 
 # set random seeds
 torch.manual_seed(args.seed)
@@ -208,25 +194,25 @@ class PairPhotoTour(genealogy_journal.genealogy_journal):
         for x in tqdm(range(num_pairs)):
             if len(already_idxs) >= args.batch_size:
                 already_idxs = set()
-            c1 = np.random.randint(0, n_classes)
+            c1 = np.random.randint(0, n_classes - 1)
             while c1 in already_idxs:
-                c1 = np.random.randint(0, n_classes)
+                c1 = np.random.randint(0, n_classes - 1)
             already_idxs.add(c1)
             if len(indices[c1]) == 2:  # hack to speed up process
                 n1, n2 = 0, 1
             else:
                 if args.donor:
                     n1 = 0 
-                    n2 = np.random.randint(1, len(indices[c1]))
+                    n2 = np.random.randint(1, len(indices[c1]) - 1)
                     tmp_label = np.random.randint(0, 2)
                     if tmp_label<1: 
                         n1 = n2
                         n2 = 0
                 else:
-                    n1 = np.random.randint(0, len(indices[c1]))
-                    n2 = np.random.randint(0, len(indices[c1]))
+                    n1 = np.random.randint(0, len(indices[c1]) - 1)
+                    n2 = np.random.randint(0, len(indices[c1]) - 1)
                 while n1 == n2:
-                    n2 = np.random.randint(0, len(indices[c1]))
+                    n2 = np.random.randint(0, len(indices[c1]) - 1)
 
             tmp_label = np.random.randint(0, 2)
             if n1 > n2:
@@ -320,10 +306,10 @@ class HardNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1, bias = False),
             nn.BatchNorm2d(128, affine=False),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=(8,16)),
+            nn.Conv2d(128, 128, kernel_size=(8,16), bias = False),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Conv2d(128, 2, kernel_size=(1,1))
+            nn.Conv2d(128, 2, kernel_size=(1,1), bias = False)
         )
         self.features.apply(weights_init)
         return
@@ -374,16 +360,6 @@ def create_loaders():
             transforms.Normalize((args.mean_image,args.mean_image,args.mean_image),
                 (args.std_image,args.std_image,args.std_image))])
 
-    train_loader = torch.utils.data.DataLoader(
-            PairPhotoTour(train=True,
-                             batch_size=args.batch_size,
-                             root=args.dataroot,
-                             name=args.training_set,
-                             download=True,
-                             transform=transform),
-                             batch_size=args.batch_size,
-                             shuffle=True, **kwargs)
-
     test_loaders = [{'name': name,
                      'dataloader': torch.utils.data.DataLoader(
              PairPhotoTour(train=False,
@@ -396,39 +372,9 @@ def create_loaders():
                         shuffle=False, **kwargs)}
                     for name in test_dataset_names]
 
-    return train_loader, test_loaders
+    return test_loaders
 
-def train(train_loader, model, optimizer, criterion,  epoch, logger):
-    # switch to train mode
-    model.train()
-    pbar = tqdm(enumerate(train_loader))
-    for batch_idx, data in pbar:
-        image_pair, label = data
-
-        if args.cuda:
-            image_pair, label  = image_pair.cuda(), label.cuda()
-            image_pair, label = Variable(image_pair), Variable(label)
-            out= model(image_pair)
-
-        loss = criterion(out, label)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-    adjust_learning_rate(optimizer)
-
-    if (args.enable_logging):
-        logger.log_value('loss', loss.data[0]).step()
-
-    try:
-        os.stat('{}{}'.format(args.model_dir,suffix))
-    except:
-        os.makedirs('{}{}'.format(args.model_dir,suffix))
-
-    torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
-               '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
-
-def test(test_loader, model, epoch, logger, logger_test_name):
+def test(test_loader, model):
     # switch to evaluate mode
     model.eval()
 
@@ -449,53 +395,65 @@ def test(test_loader, model, epoch, logger, logger_test_name):
         labels.append(ll)
         predicts.append(pred)
 
-    num_tests = test_loader.dataset.matches.size(0)
+    num_tests = test_loader.dataset.pc_pairs.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     predicts = np.vstack(predicts).reshape(num_tests)
-
     acc = np.sum(labels == predicts)/float(num_tests)
-    print('\33[91mEpoch: {}, Test set: Accuracy: {:.8f}\n\33[0m'.format(epoch,acc))
+    print('\33[91mTest set: Accuracy: {:.8f}\n\33[0m'.format(acc))
+    
+    total_num_dict = {}
+    correct_num_dict = {}
+    acc_dict = {}
+    for ind, label in enumerate(labels):
+        match = test_loader.dataset.pc_pairs[ind]
+        index_0 = test_loader.dataset.image_index[match[0]]
+        index_1 = test_loader.dataset.image_index[match[1]]
+        inx_str = '{}_{}'.format(index_0,index_1)
+        journal_id = test_loader.dataset.journal_index[match[0]]
+        try:
+            total_num_dict[inx_str] += 1
+        except:
+            total_num_dict[inx_str] = 1
+            correct_num_dict[inx_str] = 0
+        if label == predicts[ind]:
+            correct_num_dict[inx_str] +=1
 
-    if (args.enable_logging):
-        logger.log_value(logger_test_name+' acc', acc)
+    for k,v in total_num_dict.items():
+        print('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
+        #if v>100:
+        #acc_dict[k] = correct_num_dict[k]/float(v)
+        #sys.stdout.write('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
+
+    print('')
+    total_num_dict = {}
+    correct_num_dict = {}
+    acc_dict = {}
+    for ind, label in enumerate(labels):
+        match = test_loader.dataset.pc_pairs[ind]
+        journal_id = test_loader.dataset.journal_index[match[0]]
+        inx_str = '{}'.format(journal_id)
+        try:
+            total_num_dict[inx_str] += 1
+        except:
+            total_num_dict[inx_str] = 1
+            correct_num_dict[inx_str] = 0
+        if label == predicts[ind]:
+            correct_num_dict[inx_str] +=1
+
+    for k,v in total_num_dict.items():
+        #if v>100:
+        acc_dict[k] = correct_num_dict[k]/float(v)
+        #print('{} : {} : {:.2f} '.format(k, int(v), correct_num_dict[k]/float(v)))
+    #print(total_num_dict)
+    #print(correct_num_dict)
+
     return
 
-def adjust_learning_rate(optimizer):
-    """Updates the learning rate given the learning rate decay.
-    The routine has been implemented according to the original Lua SGD optimizer
-    """
-    for group in optimizer.param_groups:
-        if 'step' not in group:
-            group['step'] = 0.
-        else:
-            group['step'] += 1.
-        group['lr'] = args.lr
-        #group['lr'] = args.lr * (1.0 - float(group['step']) * \
-        #        float(args.batch_size)/(args.n_pairs * float(args.epochs)))
-    return
 
-def create_optimizer(model, new_lr):
-    # setup optimizer
-    if args.optimizer == 'sgd':
-        optimizer = optim.SGD(model.parameters(), lr=new_lr,
-                              momentum=0.9, dampening=0.9,
-                              weight_decay=args.wd)
-    elif args.optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=new_lr,
-                               weight_decay=args.wd)
-    else:
-        raise Exception('Not supported optimizer: {0}'.format(args.optimizer))
-    return optimizer
-
-
-def main(train_loader, test_loaders, model, logger, file_logger):
+def main(test_loaders, model):
     print('\nparsed options:\n{}\n'.format(vars(args)))
-
-    optimizer1 = create_optimizer(model.features, args.lr)
-    criterion = nn.CrossEntropyLoss()
     if args.cuda:
         model.cuda()
-        criterion.cuda()
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -508,26 +466,10 @@ def main(train_loader, test_loaders, model, logger, file_logger):
         else:
             print('=> no checkpoint found at {}'.format(args.resume))
             
-    start = args.start_epoch
-    end = start + args.epochs
     for test_loader in test_loaders:
-        test(test_loader['dataloader'], model, 0, logger, test_loader['name'])
-    for epoch in range(start, end):
-        # iterate over test loaders and test results
-        train(train_loader, model, optimizer1, criterion, epoch, logger)
-        for test_loader in test_loaders:
-            test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
+        test(test_loader['dataloader'], model)
         
 if __name__ == '__main__':
-    LOG_DIR = args.log_dir
-    if not os.path.isdir(LOG_DIR):
-        os.makedirs(LOG_DIR)
-    LOG_DIR = args.log_dir + suffix
-    logger, file_logger = None, None
     model = HardNet()
-    if(args.enable_logging):
-        from Loggers import Logger, FileLogger
-        logger = Logger(LOG_DIR)
-        #file_logger = FileLogger(./log/+suffix)
-    train_loader, test_loaders = create_loaders()
-    main(train_loader, test_loaders, model, logger, file_logger)
+    test_loaders = create_loaders()
+    main(test_loaders, model)
