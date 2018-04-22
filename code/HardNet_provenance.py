@@ -40,6 +40,7 @@ from Utils import str2bool
 import torch.nn as nn
 import torch.nn.functional as F
 import pdb
+from Loggers import Logger, FileLogger
 
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
@@ -58,9 +59,6 @@ class CorrelationPenaltyLoss(nn.Module):
 parser = argparse.ArgumentParser(description='PyTorch HardNet')
 # Model options
 
-parser.add_argument('--w1bsroot', type=str,
-                    default='../wxbs-descriptors-benchmark/code',
-                    help='path to dataset')
 parser.add_argument('--dataroot', type=str,
                     default='../datasets/',
                     help='path to dataset')
@@ -137,12 +135,23 @@ parser.add_argument('--no-hinge', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--donor', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--input_norm', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--no-mask', action='store_true', default=False,
+                    help='enables CUDA training')
+parser.add_argument('--bg', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--inner-product', action='store_true', default=False,
                     help='enables CUDA training')
 
 args = parser.parse_args()
+
+dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1',\
+        'MFC18_Dev1_Ver2', 'MFC18_Dev2_Ver1', 'synthesized_journals_test_direct']
+
+if args.bg:
+    dataset_names = [dataset + '_bg' for dataset in dataset_names]
+    args.training_set = args.training_set + '_bg'
 
 suffix = '{}_{}_{}'.format(args.training_set, args.batch_reduce, args.loss)
 
@@ -165,18 +174,18 @@ if args.data_augment:
     suffix = suffix + '_da'
 if args.donor:
     suffix = suffix + '_do'
+if args.fliprot:
+    suffix = suffix + '_fr'
+if args.input_norm:
+    suffix = suffix + '_ln'
+if args.resume != '':
+    suffix = suffix + '_re'
+
+da_offset = 4
 
 triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
 
-dataset_names = [args.training_set, 'synthesized_journals_test_direct', 'synthesized_journals_2_test', 'NC2017_Dev1_Beta4_bg']
-
-TEST_ON_W1BS = False
-# check if path to w1bs dataset testing module exists
-if os.path.isdir(args.w1bsroot):
-    sys.path.insert(0, args.w1bsroot)
-    import utils.w1bs as w1bs
-    TEST_ON_W1BS = True
-
+#dataset_names = ['NC2017_Dev1_Beta4_bg']
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -213,6 +222,9 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             print('Generating {} triplets'.format(self.n_triplets))
             self.triplets = self.generate_triplets(self.labels, self.n_triplets)
 
+    def update_triplets(self):
+        self.triplets = self.generate_triplets(self.labels, self.n_triplets)
+        
     @staticmethod
     def generate_triplets(labels, num_triplets):
         def create_indices(_labels):
@@ -265,8 +277,8 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             m = self.matches[index]
             img1 = transform_img(self.data[m[0]])
             img2 = transform_img(self.data[m[1]])
-            img1 = torch.from_numpy(deepcopy(img1.numpy()[:,7:39,7:39]))
-            img2 = torch.from_numpy(deepcopy(img2.numpy()[:,7:39,7:39]))
+            img1 = torch.from_numpy(deepcopy(img1.numpy()[:,8:40,8:40]))
+            img2 = torch.from_numpy(deepcopy(img2.numpy()[:,8:40,8:40]))
             return img1, img2, m[2]
         
         t = self.triplets[index]
@@ -279,22 +291,22 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             img_n = transform_img(n)
         if not args.data_augment:
             #pass
-            img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,7:39,7:39]))
-            img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,7:39,7:39]))
+            img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,8:40,8:40]))
+            img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,8:40,8:40]))
             if self.out_triplets:
-                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,7:39,7:39]))
+                img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,8:40,8:40]))
         else:
-            random_x = random.randint(0,8)
-            random_y = random.randint(0,8)
+            random_x = random.randint(8-da_offset/2,8+da_offset/2)
+            random_y = random.randint(8-da_offset/2,8+da_offset/2)
             img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,random_y:(random_y+32),\
                     random_x:(random_x+32)]))
-            random_x = random.randint(0,8)
-            random_y = random.randint(0,8)
+            random_x = random.randint(8-da_offset/2,8+da_offset/2)
+            random_y = random.randint(8-da_offset/2,8+da_offset/2)
             img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,random_y:(random_y+32),\
                     random_x:(random_x+32)]))
             if self.out_triplets:
-                random_x = random.randint(0,8)
-                random_y = random.randint(0,8)
+                random_x = random.randint(8-da_offset/2,8+da_offset/2)
+                random_y = random.randint(8-da_offset/2,8+da_offset/2)
                 img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,random_y:(random_y+32),\
                     random_x:(random_x+32)]))
             # transform images if required
@@ -303,12 +315,12 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
                 do_rot = random.random() > 0.5
                 if do_rot:
                     img_a = img_a.permute(0,2,1)
-                    img_p = img_p.permute(0,2,1)
+                    #img_p = img_p.permute(0,2,1)
                     if self.out_triplets:
                         img_n = img_n.permute(0,2,1)
                 if do_flip:
                     img_a = torch.from_numpy(deepcopy(img_a.numpy()[:,:,::-1]))
-                    img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
+                    #img_p = torch.from_numpy(deepcopy(img_p.numpy()[:,:,::-1]))
                     if self.out_triplets:
                         img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
         if self.out_triplets:
@@ -353,11 +365,17 @@ class HardNet(nn.Module):
         self.features.apply(weights_init)
         return
     
-    def input_norm(self,x):
+    def input_norm_2(self,x):
         flat = x.view(x.size(0), 3, -1)
         mp = torch.sum(flat, dim=2) / (32. * 32.)
         sp = torch.std(flat, dim=2) + 1e-7
-        return (x - mp.unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(1).expand_as(x)
+        return (x - mp.unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(-1).expand_as(x)
+
+    def input_norm(self,x):
+        flat = x.view(x.size(0),  -1)
+        mp = torch.sum(flat, dim=1) / (32. * 32.)
+        sp = torch.std(flat, dim=1) + 1e-7
+        return (x - mp.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand_as(x)
     
     def forward_2(self, input):
         x_features = self.features(self.input_norm(input))
@@ -365,12 +383,10 @@ class HardNet(nn.Module):
         return L2Norm()(x)
 
     def forward(self, input):
-        flat = input.view(input.size(0), -1)
-        #mp = args.mean-image#torch.sum(flat, dim=1) / (32. * 32.)
-        #sp = args.std-image#torch.std(flat, dim=1) + 1e-7
-        #x_features = self.features(
-            #(input - mp.unsqueeze(-1).unsqueeze(-1).expand_as(input)) / sp.unsqueeze(-1).unsqueeze(1).expand_as(input))
-        x_features = self.features(input)
+        if args.input_norm:
+            x_features = self.features(self.input_norm(input))
+        else:
+            x_features = self.features(input)
         x = x_features.view(x_features.size(0), -1)
         return L2Norm()(x)
 
@@ -474,7 +490,7 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
         adjust_learning_rate(optimizer)
 
     if (args.enable_logging):
-        logger.log_value('loss', loss.data[0]).step()
+        logger.log_value('loss', loss.data[0], step=epoch)
 
     try:
         os.stat('{}{}'.format(args.model_dir,suffix))
@@ -510,10 +526,14 @@ def test(test_loader, model, epoch, logger, logger_test_name):
     distances = np.vstack(distances).reshape(num_tests)
 
     fpr95 = ErrorRateAt95Recall(labels, 1.0 / (distances + 1e-8))
+    print(logger_test_name)
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
-
+    pos_dis = distances[labels==1]
+    neg_dis = distances[labels==0]
     if (args.enable_logging):
-        logger.log_value(logger_test_name+' fpr95', fpr95)
+        logger.log_histogram(logger_test_name+' pos dis',  pos_dis, step=epoch)
+        logger.log_histogram(logger_test_name+' neg dis',  neg_dis, step=epoch)
+        logger.log_value(logger_test_name+'_fpr95', fpr95, step=epoch)
     return
 
 def adjust_learning_rate(optimizer):
@@ -552,7 +572,7 @@ def main(train_loader, test_loaders, model, logger, file_logger):
     optimizer1 = create_optimizer(model.features, args.lr)
 
     # optionally resume from a checkpoint
-    if args.resume:
+    if args.resume != '':
         if os.path.isfile(args.resume):
             print('=> loading checkpoint {}'.format(args.resume))
             checkpoint = torch.load(args.resume)
@@ -580,7 +600,7 @@ if __name__ == '__main__':
     logger, file_logger = None, None
     model = HardNet()
     if(args.enable_logging):
-        from Loggers import Logger, FileLogger
+        
         logger = Logger(LOG_DIR)
         #file_logger = FileLogger(./log/+suffix)
     train_loader, test_loaders = create_loaders(load_random_triplets = triplet_flag)

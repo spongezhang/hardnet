@@ -23,7 +23,7 @@ class synthesized_journal(data.Dataset):
             downloaded again.
 
     """
-    def __init__(self, root, name, train=True, transform=None, download=False):
+    def __init__(self, root, name, train=True, transform=None, download=False, descriptor_flag=False):
         self.image_dir = '../datasets/original/' 
         self.root = os.path.expanduser(root)
         self.name = name
@@ -44,6 +44,9 @@ class synthesized_journal(data.Dataset):
 
         # load the serialized data
         self.data, self.labels, self.matches, self.pc_pairs = torch.load(self.data_file)
+        if descriptor_flag:
+            print(os.path.join(self.image_dir, self.name+'_descriptor.dat'))
+            self.descriptor = np.load(os.path.join(self.image_dir, self.name+'_descriptor.dat'))
         #print(type(self.data))
         print(self.data.shape)
         print('max_label: {}'.format(self.labels.max()))
@@ -83,17 +86,37 @@ class synthesized_journal(data.Dataset):
         if self._check_datafile_exists():
             print('# Found cached data {}'.format(self.data_file))
             return
+        dataset_names = self.name.split('+')
+        all_patches = []
+        all_index = []
+        all_journal_index = []
+        all_image_index = []
+        max_idx = -1
+        for name in dataset_names:
+            labels = read_info_file(self.image_dir, name)
+            labels = np.array(labels)
+            labels = labels+max_idx+1
+            max_idx = np.max(labels)
+            patches = read_image_file(self.image_dir, name)
+            if all_patches == []:
+                all_patches = patches
+            else:
+                all_patches = np.vstack((all_patches,patches))
+            if all_index == []:
+                all_index = labels
+            else:
+                all_index = np.concatenate((all_index,labels),axis = 0)
+
+        dataset = (
+            torch.ByteTensor(np.array(all_patches)),
+            torch.LongTensor(all_index),
+            read_matches_files(self.image_dir, self.name, all_index),
+            read_parent_child_files(self.image_dir, self.name, all_index)
+        )
 
         # process and save as torch files
         print('# Caching data {}'.format(self.data_file))
-
-        dataset = (
-            read_image_file(self.image_dir, self.name),
-            read_info_file(self.image_dir, self.name),
-            read_matches_files(self.image_dir, self.name),
-            read_parent_child_files(self.image_dir, self.name)
-        )
-
+        
         with open(self.data_file, 'wb') as f:
             torch.save(dataset, f)
 
@@ -103,7 +126,7 @@ def read_image_file(data_dir, dataset_name):
     #patches = np.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
     patches = hickle.load(os.path.join(data_dir, dataset_name+'_patch.dat'))
     #print(patches.shape)
-    return torch.ByteTensor(np.array(patches))
+    return np.array(patches)
 
 
 def read_info_file(data_dir, dataset_name):
@@ -111,9 +134,9 @@ def read_info_file(data_dir, dataset_name):
        Read the file and keep only the ID of the 3D point.
     """
     labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
-    return torch.LongTensor(labels)
+    return labels
 
-def read_matches_files(data_dir, dataset_name):
+def read_matches_files(data_dir, dataset_name, labels):
     """Return a Tensor containing the ground truth matches
        Read the file and keep only 3D point ID.
        Matches are represented with a 1, non matches with a 0.
@@ -122,7 +145,6 @@ def read_matches_files(data_dir, dataset_name):
     try:
         os.stat(data_dir + dataset_name + '_match.txt')
     except:
-        labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
         generate_matches_one_by_one(labels, data_dir, dataset_name, 50000)
 
     with open(os.path.join(data_dir, dataset_name + '_match.txt'), 'r') as f:
@@ -131,7 +153,7 @@ def read_matches_files(data_dir, dataset_name):
             matches.append([int(l[0]), int(l[2]), int(l[1] == l[3])])
     return torch.LongTensor(matches)
 
-def read_parent_child_files(data_dir, dataset_name):
+def read_parent_child_files(data_dir, dataset_name, labels):
     """Return a Tensor containing the ground truth matches
        Read the file and keep only 3D point ID.
        Matches are represented with a 1, non matches with a 0.
@@ -140,7 +162,6 @@ def read_parent_child_files(data_dir, dataset_name):
     try:
         os.stat(data_dir + dataset_name + '_pc.txt')
     except:
-        labels = np.load(os.path.join(data_dir, dataset_name+'_label.dat'))
         generate_pairs(labels, data_dir, dataset_name, 50000)
 
     with open(os.path.join(data_dir, dataset_name + '_pc.txt'), 'r') as f:

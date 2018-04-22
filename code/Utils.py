@@ -15,7 +15,7 @@ np_reshape = lambda x: np.reshape(x, (image_size, image_size, 1))
 
 np_reshape_color = lambda x: np.reshape(x, (image_size, image_size, 3))
 
-centerCrop = lambda x: x[7:55,7:55,:]
+centerCrop = lambda x: x[8:56,8:56,:]
 #centerCrop = lambda x: x[15:47,15:47,:]
 
 class L2Norm(nn.Module):

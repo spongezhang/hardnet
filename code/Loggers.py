@@ -1,4 +1,4 @@
-from tensorboard_logger import configure, log_value
+from tensorboard_logger import configure, log_value, log_histogram
 import os
 
 class FileLogger:
@@ -30,9 +30,20 @@ class Logger(object):
 
         self.global_step = 0
 
-    def log_value(self, name, value):
-        log_value(name, value, self.global_step)
+    def log_value(self, name, value, step = -1):
+        if step == -1:
+            log_value(name, value, self.global_step)
+        else:
+            log_value(name, value, step)
         return self
+
+    def log_histogram(self, name, histogram, step = -1):
+        if step == -1:
+            log_histogram(name, histogram, self.global_step)
+        else:
+            log_histogram(name, histogram, step)
+        return self
+
 
     def step(self):
         self.global_step += 1

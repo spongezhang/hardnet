@@ -74,8 +74,11 @@ parser.add_argument('--gpu-id', default='0', type=str,
 args = parser.parse_args()
 
 suffix = 'synthesized_journals_2_train_min_triplet_margin_as_da_do'
+try: 
+    args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
+except:
+    args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
 
-args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
