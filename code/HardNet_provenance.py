@@ -41,6 +41,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 from Loggers import Logger, FileLogger
+import nmslib
 
 class CorrelationPenaltyLoss(nn.Module):
     def __init__(self):
@@ -135,6 +136,8 @@ parser.add_argument('--no-hinge', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--donor', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--hard_mining', action='store_true', default=False,
+                    help='enables CUDA training')
 parser.add_argument('--input_norm', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--no-mask', action='store_true', default=False,
@@ -146,8 +149,10 @@ parser.add_argument('--inner-product', action='store_true', default=False,
 
 args = parser.parse_args()
 
-dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1',\
-        'MFC18_Dev1_Ver2', 'MFC18_Dev2_Ver1', 'synthesized_journals_test_direct']
+#dataset_names = ['NC2017_Dev1_Beta4', 'NC2017_Dev2_Beta1',\
+#        'MFC18_Dev1_Ver2', 'MFC18_Dev2_Ver1', 'synthesized_journals_test_direct']
+
+dataset_names = []#'NC2017_Dev2_Beta1', 'MFC18_Dev2_Ver1', 'synthesized_journals_test_direct'
 
 if args.bg:
     dataset_names = [dataset + '_bg' for dataset in dataset_names]
@@ -180,10 +185,12 @@ if args.input_norm:
     suffix = suffix + '_ln'
 if args.resume != '':
     suffix = suffix + '_re'
+if args.hard_mining != '':
+    suffix = suffix + '_hm'
 
 da_offset = 4
 
-triplet_flag = (args.batch_reduce == 'random_global') or args.gor 
+triplet_flag = True#(args.batch_reduce == 'random_global') or args.gor 
 
 #dataset_names = ['NC2017_Dev1_Beta4_bg']
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
@@ -210,17 +217,24 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
     note: a triplet is composed by a pair of matching images and one of
     different class.
     """
-    def __init__(self, train=True, transform=None, batch_size = None, load_random_triplets = False,  *arg, **kw):
+    def __init__(self, train=True, transform=None, hm=False, batch_size = None, load_random_triplets = False,  *arg, **kw):
         super(TripletPhotoTour, self).__init__(*arg, **kw)
         self.transform = transform
         self.out_triplets = load_random_triplets
         self.train = train
+        self.hm = hm
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
 
         if self.train:
             print('Generating {} triplets'.format(self.n_triplets))
+            #try:
+            #    self.triplets = np.load('../data/{}_triplets.npz'.format(args.training_set))
+            #    self.triplets = self.triplets['arr_0']
+            #    self.triplets = torch.LongTensor(self.triplets)
+            #except:
             self.triplets = self.generate_triplets(self.labels, self.n_triplets)
+            print('Triplet shape: {}'.format(self.triplets.shape))
 
     def update_triplets(self):
         self.triplets = self.generate_triplets(self.labels, self.n_triplets)
@@ -280,7 +294,12 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
             img1 = torch.from_numpy(deepcopy(img1.numpy()[:,8:40,8:40]))
             img2 = torch.from_numpy(deepcopy(img2.numpy()[:,8:40,8:40]))
             return img1, img2, m[2]
-        
+
+        if self.hm:
+            img1 = transform_img(self.data[index])
+            img1 = torch.from_numpy(deepcopy(img1.numpy()[:,8:40,8:40]))
+            return img1
+
         t = self.triplets[index]
         a, p, n = self.data[t[0]], self.data[t[1]], self.data[t[2]]
         
@@ -324,12 +343,14 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
                     if self.out_triplets:
                         img_n = torch.from_numpy(deepcopy(img_n.numpy()[:,:,::-1]))
         if self.out_triplets:
-            return (img_a, img_p, img_n)
+            return (img_a, img_p, img_n, self.labels[t[0]])
         else:
             return (img_a, img_p)
 
     def __len__(self):
-        if self.train:
+        if self.hm:
+            return self.data.shape[0]
+        elif self.train:
             return self.triplets.size(0)
         else:
             return self.matches.size(0)
@@ -402,7 +423,7 @@ def weights_init(m):
 def create_loaders(load_random_triplets = False):
 
     test_dataset_names = copy.copy(dataset_names)
-    test_dataset_names.remove(args.training_set)
+    #test_dataset_names.remove(args.training_set)
 
     kwargs = {'num_workers': args.num_workers, 'pin_memory': args.pin_memory} if args.cuda else {}
 
@@ -427,7 +448,7 @@ def create_loaders(load_random_triplets = False):
 
     test_loaders = [{'name': name,
                      'dataloader': torch.utils.data.DataLoader(
-             TripletPhotoTour(train=False,
+                     TripletPhotoTour(train=False,
                      batch_size=args.test_batch_size,
                      root=args.dataroot,
                      name=name,
@@ -442,10 +463,16 @@ def create_loaders(load_random_triplets = False):
 def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False):
     # switch to train mode
     model.train()
+
+    triplet = train_loader.dataset.triplets.numpy()
+    perm_idx = np.random.permutation(triplet.shape[0])
+    triplet = triplet[perm_idx, :]
+    train_loader.dataset.triplets = torch.LongTensor(triplet)
     pbar = tqdm(enumerate(train_loader))
+
     for batch_idx, data in pbar:
         if load_triplets:
-            data_a, data_p, data_n = data
+            data_a, data_p, data_n, label = data
         else:
             data_a, data_p = data
 
@@ -455,8 +482,16 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
             out_a, out_p = model(data_a), model(data_p)
 
         if load_triplets:
+            label = label.numpy()
+            label = label.reshape(-1,1)
+            label_matrix = np.repeat(label,label.shape[0],axis = 1)
+            label_matrix = np.equal(label_matrix,label_matrix.T)
+            label_matrix = label_matrix.astype(np.float32)
+            label_matrix = torch.from_numpy(label_matrix)
             data_n  = data_n.cuda()
             data_n = Variable(data_n)
+            label_matrix  = label_matrix.cuda()
+            label_matrix = Variable(label_matrix)
             out_n = model(data_n)
         
         if args.batch_reduce == 'L2Net':
@@ -468,7 +503,7 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
                 anchor_swap=args.anchorswap,
                 loss_type = args.loss)
         else:
-            loss = loss_HardNet(out_a, out_p,
+            loss = loss_HardNet(out_a, out_p, out_n, label_matrix,
                             margin=args.margin,
                             anchor_swap=args.anchorswap,
                             anchor_ave=args.anchorave,
@@ -499,6 +534,80 @@ def train(train_loader, model, optimizer, epoch, logger, load_triplets  = False)
 
     torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict()},
                '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,epoch))
+
+def hm(train_loader, model, epoch, logger, update_flag=False):
+    # switch to evaluate mode
+    triplet = train_loader.dataset.triplets.numpy()
+    triplet_list = []
+    
+    for i in range(triplet.shape[0]):
+        triplet_list.append([triplet[i,0], triplet[i,1], triplet[i,2]])
+
+    model.eval()
+    expand = 3
+    nn = 5
+    num_sample = train_loader.dataset.data.shape[0]
+    train_loader.dataset.hm = True
+
+    descriptor = []
+    pbar = tqdm(enumerate(train_loader))
+    for batch_idx, data_a in pbar:
+        if args.cuda:
+            data_a = data_a.cuda()
+        data_a  = Variable(data_a, volatile=True)
+        out_a = model(data_a)
+        descriptor.append(out_a.data.cpu().numpy())
+    descriptor = np.vstack(descriptor)
+    print(descriptor.shape)
+    
+    expand = 3
+    nn = 5
+    index = nmslib.init(space='l2', method='hnsw')
+    index.addDataPointBatch(data=descriptor)
+    index.createIndex(print_progress=True, index_params={"maxM": 32, "maxM0": 64, "indexThreadQty": 6})
+    index.setQueryTimeParams(params={"ef": nn * expand})
+    I = index.knnQueryBatch(queries=descriptor, k=nn, num_threads=6)
+    I = np.array(I)
+    D = I[:,1,:]
+    I = I[:,0,:]
+    I = I.astype(int)
+    gt_label_mat = np.ones(I.shape, dtype=np.int32)
+    label_mat = np.ones(I.shape, dtype=np.int32)
+    bad_num = 0
+    bad_distance = 0
+    all_label = train_loader.dataset.labels.numpy()
+    thres = 0.0
+    if num_sample < 100000:
+        thres = 0.0
+    for i in range(num_sample):
+        gt_label_mat[i,:] = all_label[i]
+        retrieved_label = all_label[I[i,:]]
+        label_mat[i,:] = retrieved_label
+        bad_num += np.sum(np.absolute(retrieved_label-all_label[i])>100)
+        bad_distance += np.sum(D[i,np.absolute(retrieved_label-all_label[i])>100])
+        for j in range(retrieved_label.shape[0]):
+            if abs(retrieved_label[j]-all_label[i])>100 and D[i,j]>thres:
+                if i>0 and all_label[i] == all_label[i-1]:
+                    triplet_list.append([i, i-1, I[i,j]]) 
+                else:
+                    triplet_list.append([i, i+1, I[i,j]])
+
+    triplet_list = np.array(triplet_list)
+    #np.savez('../data/{}_triplets.npz'.format(args.training_set),triplet_list)
+    print(triplet_list[-5:,:])
+    bad_distance_list = D[np.abs(gt_label_mat-label_mat)>100]
+    if update_flag:
+        train_loader.dataset.triplets = torch.LongTensor(triplet_list)
+    print(len(triplet_list))
+    print(bad_num)
+    print(bad_distance/bad_num)
+
+    train_loader.dataset.hm=False
+    if (args.enable_logging):
+        logger.log_histogram('Hard Distance',  bad_distance_list, step=epoch)
+        logger.log_value('Bad Number', bad_num, step=epoch)
+        logger.log_value('Bad Distance', bad_distance/bad_num, step=epoch)
+    return
 
 def test(test_loader, model, epoch, logger, logger_test_name):
     # switch to evaluate mode
@@ -584,6 +693,8 @@ def main(train_loader, test_loaders, model, logger, file_logger):
             
     start = args.start_epoch
     end = start + args.epochs
+    #if args.hard_mining:
+    #        hm(train_loader, model, 0, logger)
     for test_loader in test_loaders:
         test(test_loader['dataloader'], model, 0, logger, test_loader['name'])
     for epoch in range(start, end):
@@ -591,7 +702,11 @@ def main(train_loader, test_loaders, model, logger, file_logger):
         train(train_loader, model, optimizer1, epoch, logger, triplet_flag)
         for test_loader in test_loaders:
             test(test_loader['dataloader'], model, epoch, logger, test_loader['name'])
-        
+        if args.hard_mining and (epoch)%5 == 0:
+            hm(train_loader, model, epoch, logger, update_flag = True)
+        else:
+            hm(train_loader, model, epoch, logger, update_flag = False)
+
 if __name__ == '__main__':
     LOG_DIR = args.log_dir
     if not os.path.isdir(LOG_DIR):

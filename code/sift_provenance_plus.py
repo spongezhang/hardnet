@@ -106,7 +106,7 @@ parser.add_argument('--inner-product', action='store_true', default=False,
 
 args = parser.parse_args()
 
-dataset_names = ['NC2017_Dev1_Beta4']#, #'NC2017_Dev2_Beta1',\
+dataset_names = [args.training_set]#, #'NC2017_Dev2_Beta1',\
         #'MFC18_Dev1_Ver2', 'MFC18_Dev2_Ver1', 'synthesized_journals_test_direct']
 
 suffix = '{}'.format(args.training_set)
@@ -131,20 +131,18 @@ class TripletPhotoTour(synthesized_journal.synthesized_journal):
         self.out_triplets = load_random_triplets
         self.n_triplets = args.n_triplets
         self.batch_size = batch_size
+        self.triplets = np.load('../data/{}_triplets.npz'.format(args.training_set))
+        self.triplets = self.triplets['arr_0']
+        self.triplets = torch.LongTensor(self.triplets)
 
     def __getitem__(self, index):
-        def transform_img(img):
-            if self.transform is not None:
-                img = self.transform(img.numpy())
-            return img
-
-        m = self.matches[index]
-        descriptor1 = self.descriptor[m[0]]
-        descriptor2 = self.descriptor[m[1]]
-        return descriptor1, descriptor2, m[2]
+        m = self.triplets[index]
+        descriptor1 = self.descriptor[m[1]]
+        descriptor2 = self.descriptor[m[2]]
+        return descriptor1, descriptor2, 0
         
     def __len__(self):
-        return self.matches.size(0)
+        return self.triplets.size(0)
 
 def create_loaders(load_random_triplets = False):
 
@@ -223,19 +221,17 @@ def test(test_loader, epoch, logger, logger_test_name):
         ll = label.numpy().reshape(-1, 1)
         labels.append(ll)
 
-    num_tests = test_loader.dataset.matches.size(0)
+    num_tests = test_loader.dataset.triplets.size(0)
     labels = np.vstack(labels).reshape(num_tests)
     distances = np.vstack(distances).reshape(num_tests)
 
     fpr95 = ErrorRateAt95Recall(labels, 1.0 / (distances + 1e-8))
     print(logger_test_name)
     print('\33[91mTest set: Accuracy(FPR95): {:.8f}\n\33[0m'.format(fpr95))
-    pos_dis = distances[labels==1]
-    neg_dis = distances[labels==0]
-    if (args.enable_logging):
-        logger.log_histogram(logger_test_name+' pos dis',  pos_dis, step=epoch)
-        logger.log_histogram(logger_test_name+' neg dis',  neg_dis, step=epoch)
-        logger.log_value(logger_test_name+'_fpr95', fpr95, step=epoch)
+    pos_dis = distances[:1000000]
+    neg_dis = distances[1000000:]
+    print(np.mean(pos_dis))
+    print(np.mean(neg_dis))
     return
 
 def main(test_loaders, logger, file_logger):
@@ -252,7 +248,5 @@ if __name__ == '__main__':
     LOG_DIR = args.log_dir + suffix
     logger, file_logger = None, None
 
-    if(args.enable_logging):
-        logger = Logger(LOG_DIR)
     test_loaders = create_loaders()
     main(test_loaders, logger, file_logger)

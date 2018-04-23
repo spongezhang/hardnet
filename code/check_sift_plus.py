@@ -36,34 +36,35 @@ class cd:
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
 
-gpu_set = ['0','1']
-parameter_set = [' --data_augment ']#, ' --data_augment --fliprot=True',
+gpu_set = ['0']
+parameter_set = ['  ']
 number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
-datasets = ['synthesized_journals_train']#, #, 'MFC18_Dev1_Ver2+MFC18_Dev2_Ver1'
+#datasets = ['sift']#, 'synthesized_journals_train'
+datasets = ['synthesized_journals_train']#, 'synthesized_journals_train'
 process_set = []
 
 
-for parameter in parameter_set:
-    for idx, dataset in enumerate(datasets):
+for dataset in datasets:
+    for idx, parameter in enumerate(parameter_set):
         print('Test Parameter: {}'.format(parameter))
-        command = 'python HardNet_provenance.py --training-set {} --n-triplets=1000000 --batch-size=128 --epochs 3 --gor=False {} --gpu-id {} --log-dir ../provenance_log/ --enable-logging=True --batch-reduce=min '\
+        command = 'python sift_provenance_plus.py --training-set {} {} --gpu-id {} --log-dir ../provenance_log/ --enable-logging=True  '\
                 .format(dataset, parameter, gpu_set[idx%number_gpu])
     
         print(command)
         p = subprocess.Popen(shlex.split(command))
         process_set.append(p)
         
-        if (idx+1)%number_gpu == 0:
-            print('Wait for process end')
-            for sub_process in process_set:
-                sub_process.wait()
-        
-            process_set = []
-        
-        time.sleep(60)
+    if (idx+1)%number_gpu == 0:
+        print('Wait for process end')
+        for sub_process in process_set:
+            sub_process.wait()
     
-    for sub_process in process_set:
-        sub_process.wait()
+        process_set = []
+    
+    time.sleep(60)
+    
+for sub_process in process_set:
+    sub_process.wait()
 

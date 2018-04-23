@@ -88,7 +88,7 @@ def loss_L2Net(anchor, positive, anchor_swap = False,  margin = 1.0, loss_type =
     loss = torch.mean(loss)
     return loss
 
-def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_hinge = False, no_mask = False, inner_product = False,\
+def loss_HardNet(anchor, positive, negative, label_matrix, anchor_swap = False, anchor_ave = False, no_hinge = False, no_mask = False, inner_product = False,\
         margin = 1.0, batch_reduce = 'min', loss_type = "triplet_margin"):
     """HardNet margin loss - calculates loss based on distance matrix based on positive distance and closest negative distance.
     """
@@ -120,7 +120,9 @@ def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_h
 
         # steps to filter out same patches that occur in distance matrix as negatives
         pos1 = torch.diag(dist_matrix)
-        dist_without_min_on_diag = dist_matrix+eye*10
+        dist_without_min_on_diag = dist_matrix+label_matrix*10.0
+        eps = 1e-8
+        neg_dis = torch.sqrt(2.0 - 2.0*torch.sum(anchor*negative,dim=1)+eps)
         if not no_mask:
             if inner_product:
                 mask = (dist_without_min_on_diag.ge(-1.95).float()-1.0)*-1.0
@@ -134,6 +136,7 @@ def loss_HardNet(anchor, positive, anchor_swap = False, anchor_ave = False, no_h
             if anchor_swap:
                 min_neg2 = torch.min(dist_without_min_on_diag,0)[0]
                 min_neg = torch.min(min_neg,min_neg2)
+                min_neg = torch.min(min_neg,neg_dis)
             min_neg = min_neg
             pos = pos1
         elif batch_reduce == 'average':
