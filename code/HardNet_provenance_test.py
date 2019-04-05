@@ -79,7 +79,8 @@ suffix = args.suffix
 try:
     args.resume = '{}{}/checkpoint_{}.pth'.format(args.model_dir,suffix,args.start_epoch)
 except:
-    args.resume = '{}{}/checkpoint_12.pth'.format(args.model_dir,suffix)
+    args.resume = '{}{}/checkpoint_9.pth'.format(args.model_dir,suffix)
+
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
 # order to prevent any memory allocation on unused GPUs
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -140,9 +141,18 @@ class HardNet(nn.Module):
             nn.Conv2d(128, 128, kernel_size=8, bias = False),
             nn.BatchNorm2d(128, affine=False),
         )
-
+    
+    def input_norm(self,x):
+        flat = x.view(x.size(0),  -1)
+        mp = torch.sum(flat, dim=1) / (32. * 32.)
+        sp = torch.std(flat, dim=1) + 1e-7
+        return (x - mp.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand_as(x)) / sp.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand_as(x)
+    
     def forward(self, input):
-        x_features = self.features(input)
+        if '_ln' in args.suffix:
+            x_features = self.features(self.input_norm(input))
+        else:
+            x_features = self.features(input)
         x = x_features.view(x_features.size(0), -1)
         return L2Norm()(x)
 

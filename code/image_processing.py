@@ -100,6 +100,63 @@ def read_color_image_from_name(root_dir,file_name):
 
     return img, ratio
 
+def read_original_color_image_from_name(root_dir,file_name):
+    img = cv2.imread(root_dir + file_name)
+    if img.shape[2] == 1 :
+        img = np.repeat(img, 3, axis = 2)
+    if img.shape[2] == 4 :
+        img = img[:,:,:3]
+
+    ftest = open(root_dir + file_name, 'rb')
+    tags = exifread.process_file(ftest)
+    
+    try:
+        if str(tags['Thumbnail Orientation']) == 'Rotated 90 CW':
+            img = cv2.transpose(img)  
+            img = cv2.flip(img, 1)
+        elif str(tags['Thumbnail Orientation']) == 'Rotated 90 CCW':
+            img = cv2.transpose(img)  
+            img = cv2.flip(img, 0)
+        elif str(tags['Thumbnail Orientation']) == 'Rotated 180':
+            img = cv2.flip(img, -1)
+    except:
+        tags = tags
+        
+    ratio = 1.0
+    return img, ratio
+
+def read_original_image_from_name(journal_dir, file_name, exif_flag=True):
+    img = cv2.imread(journal_dir + file_name)
+    
+    if img.shape[2] == 4 :
+        img = img[:,:,:3]
+    if img.shape[2] == 3 :
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    if exif_flag:
+        ftest = open(journal_dir + '%s/' % journal_name + file_name, 'rb')
+        tags = exifread.process_file(ftest)
+        try:
+            if str(tags['Thumbnail Orientation']) == 'Rotated 90 CW':
+                img = cv2.transpose(img)  
+                img = cv2.flip(img, 1)
+            elif str(tags['Thumbnail Orientation']) == 'Rotated 90 CCW':
+                img = cv2.transpose(img)  
+                img = cv2.flip(img, 0)
+            elif str(tags['Thumbnail Orientation']) == 'Rotated 180':
+                img = cv2.flip(img, -1)
+        except:
+            pass
+
+    ratio = 1.0
+    return img, ratio
+
+def extract_patch_genealogy(img, kp, standard_size):
+    kp = [int(kp[0]),int(kp[1])]
+    res = img[(kp[0]-standard_size/2):(kp[0]+standard_size/2),\
+            (kp[1]-standard_size/2):(kp[1]+standard_size/2),:].copy()
+    return np.asarray(res)
+
 def match_and_insert(donor_kp_list, donor_desc_list, donor_patch_list,\
         base_image, base_kp, base_desc, transform_matrix):
     for kp,desc in zip(base_kp,base_desc):

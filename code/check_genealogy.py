@@ -42,7 +42,7 @@ number_gpu = len(gpu_set)
 
 #datasets = ['notredame', 'yosemite', 'liberty']
 #datasets = ['synthesized_journals_2_train_bg']
-datasets = ['NC2017_Dev2_Beta1_bg --jpg', 'NC2017_Dev2_Beta1_bg+NC2017_Dev2_Beta1_bg_jpg']
+datasets = ['NC2017_Dev2_Beta1_bg --jpg']#, 'NC2017_Dev2_Beta1_bg+NC2017_Dev2_Beta1_bg_jpg'
 process_set = []
 
 

@@ -127,6 +127,8 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='LI',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--donor', action='store_true', default=False,
                     help='enables CUDA training')
+parser.add_argument('--donor_test', action='store_true', default=False,
+                    help='enables CUDA training')
 
 args = parser.parse_args()
 dataset_names = ['NC2017_Dev1_Beta4_bg', 'NC2017_Dev2_Beta1_bg'] #
@@ -150,6 +152,8 @@ if args.data_augment:
     suffix = suffix + '_da'
 if args.donor:
     suffix = suffix + '_do'
+if args.donor_test:
+    suffix = suffix + '_dt'
 
 
 # set the device to use by setting CUDA_VISIBLE_DEVICES env variable in
